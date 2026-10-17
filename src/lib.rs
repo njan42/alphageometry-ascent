@@ -1,18 +1,18 @@
-use pyo3::prelude::*;
-use pyo3::{Bound, types::PyModule};
 use ascent::ascent;
 use ascent::Lattice;
+use pyo3::prelude::*;
+use pyo3::{types::PyModule, Bound};
 use std::collections::BTreeSet;
 
 fn same_orientation(l1: Vec<(i64, i64)>, l2: Vec<(i64, i64)>) -> bool {
     let edge_length = |p: (i64, i64), q: (i64, i64)| (q.0 - p.0) * (q.1 + p.1);
 
     let area1: i64 = (0..l1.len())
-        .map(|i| edge_length(l1[i].clone(), l1[(i + 1) % l1.len()].clone()))
+        .map(|i| edge_length(l1[i], l1[(i + 1) % l1.len()]))
         .sum();
 
     let area2: i64 = (0..l2.len())
-        .map(|i| edge_length(l2[i].clone(), l2[(i + 1) % l2.len()].clone()))
+        .map(|i| edge_length(l2[i], l2[(i + 1) % l2.len()]))
         .sum();
 
     (area1 * area2) > 0
@@ -41,7 +41,7 @@ impl Derivation {
 }
 
 // Provenance lattice to track all ways a fact was derived
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Provenance {
     derivations: BTreeSet<Derivation>,
 }
@@ -60,28 +60,37 @@ impl Provenance {
     }
 }
 
-impl Lattice for Provenance {
-    fn meet(self, other: Self) -> Self {
-        let mut derivations = self.derivations;
-        derivations.extend(other.derivations);
-        Provenance { derivations }
+impl PartialOrd for Provenance {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering;
+        if self == other {
+            Some(Ordering::Equal)
+        } else if self.derivations.is_subset(&other.derivations) {
+            Some(Ordering::Less)
+        } else if self.derivations.is_superset(&other.derivations) {
+            Some(Ordering::Greater)
+        } else {
+            None
+        }
     }
+}
 
+impl Lattice for Provenance {
     fn meet_mut(&mut self, other: Self) -> bool {
         let old_len = self.derivations.len();
-        self.derivations.extend(other.derivations);
+        self.derivations.retain(|d| other.derivations.contains(d));
         self.derivations.len() != old_len
     }
 
     fn join_mut(&mut self, other: Self) -> bool {
-        self.meet_mut(other)
+        let old_len = self.derivations.len();
+        self.derivations.extend(other.derivations);
+        self.derivations.len() != old_len
     }
 }
 
 fn fact_id(pred_type: &str, args: impl IntoIterator<Item = impl AsRef<str>>) -> String {
-    let args_str: Vec<String> = args.into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect();
+    let args_str: Vec<String> = args.into_iter().map(|s| s.as_ref().to_string()).collect();
     format!("{}({})", pred_type, args_str.join(","))
 }
 
@@ -101,7 +110,16 @@ struct DeductiveDatabase {
     contri2_facts: Vec<(String, String, String, String, String, String)>,
     simtri1_facts: Vec<(String, String, String, String, String, String)>,
     simtri2_facts: Vec<(String, String, String, String, String, String)>,
-    eqratio_facts: Vec<(String, String, String, String, String, String, String, String)>,
+    eqratio_facts: Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+    )>,
     aconst_facts: Vec<(String, String, String, i32, i32)>,
 
     // Derived results with provenance
@@ -117,7 +135,17 @@ struct DeductiveDatabase {
     derived_contri2: Vec<(String, String, String, String, String, String, Provenance)>,
     derived_simtri1: Vec<(String, String, String, String, String, String, Provenance)>,
     derived_simtri2: Vec<(String, String, String, String, String, String, Provenance)>,
-    derived_eqratio: Vec<(String, String, String, String, String, String, String, String, Provenance)>,
+    derived_eqratio: Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Provenance,
+    )>,
     derived_aconst: Vec<(String, String, String, i32, i32, Provenance)>,
 }
 
@@ -214,7 +242,17 @@ impl DeductiveDatabase {
         self.simtri2_facts.push((a, b, c, d, e, f));
     }
 
-    fn add_eqratio(&mut self, a: String, b: String, c: String, d: String, e: String, f: String, g: String, h: String) {
+    fn add_eqratio(
+        &mut self,
+        a: String,
+        b: String,
+        c: String,
+        d: String,
+        e: String,
+        f: String,
+        g: String,
+        h: String,
+    ) {
         self.eqratio_facts.push((a, b, c, d, e, f, g, h));
     }
 
@@ -571,20 +609,62 @@ impl DeductiveDatabase {
 
         // Initialize input relations with axiom provenance
         prog.point = points;
-        prog.col = col_facts.into_iter().map(|(a, b, c)| (a, b, c, Provenance::axiom())).collect();
-        prog.para = para_facts.into_iter().map(|(a, b, c, d)| (a, b, c, d, Provenance::axiom())).collect();
-        prog.perp = perp_facts.into_iter().map(|(a, b, c, d)| (a, b, c, d, Provenance::axiom())).collect();
-        prog.cong = cong_facts.into_iter().map(|(a, b, c, d)| (a, b, c, d, Provenance::axiom())).collect();
-        prog.eqangle = eqangle_facts.into_iter().map(|(a, b, c, d, e, f)| (a, b, c, d, e, f, Provenance::axiom())).collect();
-        prog.cyclic = cyclic_facts.into_iter().map(|(a, b, c, d)| (a, b, c, d, Provenance::axiom())).collect();
-        prog.sameclock = sameclock_facts.into_iter().map(|(a, b, c, d, e, f)| (a, b, c, d, e, f, Provenance::axiom())).collect();
-        prog.midp = midp_facts.into_iter().map(|(a, b, c)| (a, b, c, Provenance::axiom())).collect();
-        prog.contri1 = contri1_facts.into_iter().map(|(a, b, c, d, e, f)| (a, b, c, d, e, f, Provenance::axiom())).collect();
-        prog.contri2 = contri2_facts.into_iter().map(|(a, b, c, d, e, f)| (a, b, c, d, e, f, Provenance::axiom())).collect();
-        prog.simtri1 = simtri1_facts.into_iter().map(|(a, b, c, d, e, f)| (a, b, c, d, e, f, Provenance::axiom())).collect();
-        prog.simtri2 = simtri2_facts.into_iter().map(|(a, b, c, d, e, f)| (a, b, c, d, e, f, Provenance::axiom())).collect();
-        prog.eqratio = eqratio_facts.into_iter().map(|(a, b, c, d, e, f, g, h)| (a, b, c, d, e, f, g, h, Provenance::axiom())).collect();
-        prog.aconst = aconst_facts.into_iter().map(|(a, b, c, m, n)| (a, b, c, m, n, Provenance::axiom())).collect();
+        prog.col = col_facts
+            .into_iter()
+            .map(|(a, b, c)| (a, b, c, Provenance::axiom()))
+            .collect();
+        prog.para = para_facts
+            .into_iter()
+            .map(|(a, b, c, d)| (a, b, c, d, Provenance::axiom()))
+            .collect();
+        prog.perp = perp_facts
+            .into_iter()
+            .map(|(a, b, c, d)| (a, b, c, d, Provenance::axiom()))
+            .collect();
+        prog.cong = cong_facts
+            .into_iter()
+            .map(|(a, b, c, d)| (a, b, c, d, Provenance::axiom()))
+            .collect();
+        prog.eqangle = eqangle_facts
+            .into_iter()
+            .map(|(a, b, c, d, e, f)| (a, b, c, d, e, f, Provenance::axiom()))
+            .collect();
+        prog.cyclic = cyclic_facts
+            .into_iter()
+            .map(|(a, b, c, d)| (a, b, c, d, Provenance::axiom()))
+            .collect();
+        prog.sameclock = sameclock_facts
+            .into_iter()
+            .map(|(a, b, c, d, e, f)| (a, b, c, d, e, f, Provenance::axiom()))
+            .collect();
+        prog.midp = midp_facts
+            .into_iter()
+            .map(|(a, b, c)| (a, b, c, Provenance::axiom()))
+            .collect();
+        prog.contri1 = contri1_facts
+            .into_iter()
+            .map(|(a, b, c, d, e, f)| (a, b, c, d, e, f, Provenance::axiom()))
+            .collect();
+        prog.contri2 = contri2_facts
+            .into_iter()
+            .map(|(a, b, c, d, e, f)| (a, b, c, d, e, f, Provenance::axiom()))
+            .collect();
+        prog.simtri1 = simtri1_facts
+            .into_iter()
+            .map(|(a, b, c, d, e, f)| (a, b, c, d, e, f, Provenance::axiom()))
+            .collect();
+        prog.simtri2 = simtri2_facts
+            .into_iter()
+            .map(|(a, b, c, d, e, f)| (a, b, c, d, e, f, Provenance::axiom()))
+            .collect();
+        prog.eqratio = eqratio_facts
+            .into_iter()
+            .map(|(a, b, c, d, e, f, g, h)| (a, b, c, d, e, f, g, h, Provenance::axiom()))
+            .collect();
+        prog.aconst = aconst_facts
+            .into_iter()
+            .map(|(a, b, c, m, n)| (a, b, c, m, n, Provenance::axiom()))
+            .collect();
 
         prog.run();
 
@@ -611,9 +691,12 @@ impl DeductiveDatabase {
     }
 
     fn get_col(&self) -> Vec<(String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_col.iter()
+        self.derived_col
+            .iter()
             .map(|(a, b, c, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
                 (a.clone(), b.clone(), c.clone(), derivations)
@@ -622,9 +705,12 @@ impl DeductiveDatabase {
     }
 
     fn get_para(&self) -> Vec<(String, String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_para.iter()
+        self.derived_para
+            .iter()
             .map(|(a, b, c, d, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
                 (a.clone(), b.clone(), c.clone(), d.clone(), derivations)
@@ -633,9 +719,12 @@ impl DeductiveDatabase {
     }
 
     fn get_perp(&self) -> Vec<(String, String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_perp.iter()
+        self.derived_perp
+            .iter()
             .map(|(a, b, c, d, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
                 (a.clone(), b.clone(), c.clone(), d.clone(), derivations)
@@ -644,9 +733,12 @@ impl DeductiveDatabase {
     }
 
     fn get_cong(&self) -> Vec<(String, String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_cong.iter()
+        self.derived_cong
+            .iter()
             .map(|(a, b, c, d, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
                 (a.clone(), b.clone(), c.clone(), d.clone(), derivations)
@@ -654,21 +746,45 @@ impl DeductiveDatabase {
             .collect()
     }
 
-    fn get_eqangle(&self) -> Vec<(String, String, String, String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_eqangle.iter()
+    fn get_eqangle(
+        &self,
+    ) -> Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Vec<(String, Vec<String>)>,
+    )> {
+        self.derived_eqangle
+            .iter()
             .map(|(a, b, c, d, e, f, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
-                (a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(), derivations)
+                (
+                    a.clone(),
+                    b.clone(),
+                    c.clone(),
+                    d.clone(),
+                    e.clone(),
+                    f.clone(),
+                    derivations,
+                )
             })
             .collect()
     }
 
     fn get_cyclic(&self) -> Vec<(String, String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_cyclic.iter()
+        self.derived_cyclic
+            .iter()
             .map(|(a, b, c, d, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
                 (a.clone(), b.clone(), c.clone(), d.clone(), derivations)
@@ -676,21 +792,45 @@ impl DeductiveDatabase {
             .collect()
     }
 
-    fn get_sameclock(&self) -> Vec<(String, String, String, String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_sameclock.iter()
+    fn get_sameclock(
+        &self,
+    ) -> Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Vec<(String, Vec<String>)>,
+    )> {
+        self.derived_sameclock
+            .iter()
             .map(|(a, b, c, d, e, f, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
-                (a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(), derivations)
+                (
+                    a.clone(),
+                    b.clone(),
+                    c.clone(),
+                    d.clone(),
+                    e.clone(),
+                    f.clone(),
+                    derivations,
+                )
             })
             .collect()
     }
 
     fn get_midp(&self) -> Vec<(String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_midp.iter()
+        self.derived_midp
+            .iter()
             .map(|(a, b, c, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
                 (a.clone(), b.clone(), c.clone(), derivations)
@@ -698,65 +838,177 @@ impl DeductiveDatabase {
             .collect()
     }
 
-    fn get_contri1(&self) -> Vec<(String, String, String, String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_contri1.iter()
+    fn get_contri1(
+        &self,
+    ) -> Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Vec<(String, Vec<String>)>,
+    )> {
+        self.derived_contri1
+            .iter()
             .map(|(a, b, c, d, e, f, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
-                (a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(), derivations)
+                (
+                    a.clone(),
+                    b.clone(),
+                    c.clone(),
+                    d.clone(),
+                    e.clone(),
+                    f.clone(),
+                    derivations,
+                )
             })
             .collect()
     }
 
-    fn get_contri2(&self) -> Vec<(String, String, String, String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_contri2.iter()
+    fn get_contri2(
+        &self,
+    ) -> Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Vec<(String, Vec<String>)>,
+    )> {
+        self.derived_contri2
+            .iter()
             .map(|(a, b, c, d, e, f, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
-                (a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(), derivations)
+                (
+                    a.clone(),
+                    b.clone(),
+                    c.clone(),
+                    d.clone(),
+                    e.clone(),
+                    f.clone(),
+                    derivations,
+                )
             })
             .collect()
     }
 
-    fn get_simtri1(&self) -> Vec<(String, String, String, String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_simtri1.iter()
+    fn get_simtri1(
+        &self,
+    ) -> Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Vec<(String, Vec<String>)>,
+    )> {
+        self.derived_simtri1
+            .iter()
             .map(|(a, b, c, d, e, f, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
-                (a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(), derivations)
+                (
+                    a.clone(),
+                    b.clone(),
+                    c.clone(),
+                    d.clone(),
+                    e.clone(),
+                    f.clone(),
+                    derivations,
+                )
             })
             .collect()
     }
 
-    fn get_simtri2(&self) -> Vec<(String, String, String, String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_simtri2.iter()
+    fn get_simtri2(
+        &self,
+    ) -> Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Vec<(String, Vec<String>)>,
+    )> {
+        self.derived_simtri2
+            .iter()
             .map(|(a, b, c, d, e, f, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
-                (a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(), derivations)
+                (
+                    a.clone(),
+                    b.clone(),
+                    c.clone(),
+                    d.clone(),
+                    e.clone(),
+                    f.clone(),
+                    derivations,
+                )
             })
             .collect()
     }
 
-    fn get_eqratio(&self) -> Vec<(String, String, String, String, String, String, String, String, Vec<(String, Vec<String>)>)> {
-        self.derived_eqratio.iter()
+    fn get_eqratio(
+        &self,
+    ) -> Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Vec<(String, Vec<String>)>,
+    )> {
+        self.derived_eqratio
+            .iter()
             .map(|(a, b, c, d, e, f, g, h, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
-                (a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(), g.clone(), h.clone(), derivations)
+                (
+                    a.clone(),
+                    b.clone(),
+                    c.clone(),
+                    d.clone(),
+                    e.clone(),
+                    f.clone(),
+                    g.clone(),
+                    h.clone(),
+                    derivations,
+                )
             })
             .collect()
     }
 
     fn get_aconst(&self) -> Vec<(String, String, String, i32, i32, Vec<(String, Vec<String>)>)> {
-        self.derived_aconst.iter()
+        self.derived_aconst
+            .iter()
             .map(|(a, b, c, m, n, prov)| {
-                let derivations = prov.derivations.iter()
+                let derivations = prov
+                    .derivations
+                    .iter()
                     .map(|d| (d.rule.clone(), d.parents.iter().cloned().collect()))
                     .collect();
                 (a.clone(), b.clone(), c.clone(), *m, *n, derivations)
