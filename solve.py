@@ -1,10 +1,11 @@
 # solve.py
-import sys
+import argparse
 import os
 import read_in_relations
 import geogebra
 import constructions
 import dd
+import rabbit
 from problem import Problem
 from relations import Point
 
@@ -63,7 +64,7 @@ def construct_problem(
     return Problem(set(predicates), set(goals), points_objs)
 
 
-def prove(problem: Problem):
+def prove(problem: Problem, rabbit_mode: str = "none"):
     if problem.is_solved():
         print("Already solved!")
         return
@@ -107,6 +108,15 @@ def prove(problem: Problem):
 
         if changed:
             print(f"Added {len(problem.predicates) - previous_count} new predicates")
+        elif (
+            not problem.is_solved()
+            and rabbit_mode == "random"
+            and iteration < max_iterations
+        ):
+            print("DDAR is stuck; trying a random auxiliary construction")
+            changed = rabbit.add_random_rabbit(problem)
+            if not changed:
+                print("No valid auxiliary construction found")
 
     print("\n" + "=" * 60)
     if iteration >= max_iterations:
@@ -121,25 +131,23 @@ def prove(problem: Problem):
 
 
 def main():
-    args = sys.argv[1:]
-
-    if not args:
-        print("Usage:")
-        print("  python solve.py <problem_directory> [--plot]")
-        sys.exit(1)
-
-    plot_flag = "--plot" in args
-    args = [a for a in args if a != "--plot"]
-
-    problem_dir = args[0]
+    parser = argparse.ArgumentParser(description="Solve a geometry problem with DDAR.")
+    parser.add_argument("problem_directory")
+    parser.add_argument("--plot", action="store_true")
+    parser.add_argument(
+        "--rabbit", choices=("none", "random"), default="none",
+        help="auxiliary construction strategy when DDAR gets stuck (default: none)",
+    )
+    args = parser.parse_args()
+    problem_dir = args.problem_directory
     ggb_file = f"{problem_dir}/problem.ggb"
     problem_file = f"{problem_dir}/problem.txt"
 
     problem = construct_problem(
-        ggb_file=ggb_file, problem_file=problem_file, plot=plot_flag
+        ggb_file=ggb_file, problem_file=problem_file, plot=args.plot
     )
 
-    prove(problem)
+    prove(problem, rabbit_mode=args.rabbit)
 
 
 if __name__ == "__main__":

@@ -464,7 +464,7 @@ class Para(Predicate):
 
     def is_valid(self) -> bool:
         lines = list(self.data)
-        if len(lines) <= 2:
+        if len(lines) < 2:
             return True
         line1, line2 = lines
         if line1 == line2:
