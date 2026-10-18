@@ -1,0 +1,7 @@
+A@0_4 = ;
+B@-4_0 = ;
+C@4_0 = ;
+D@-2_2 = ;
+E@2_2 = midp D A B;
+midp E A C;
+? para D E B C

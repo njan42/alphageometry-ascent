@@ -1,3 +1,4 @@
+import ast
 from functools import wraps
 import inspect
 import itertools
@@ -21,6 +22,21 @@ def next_name(prefix="P", *, problem=None):
             return name
 
 
+def describe(function):
+    """Describe inputs and possible deductions directly from the constructor."""
+    source = ast.parse(inspect.getsource(inspect.unwrap(function)))
+    deductions = [
+        ast.unparse(node.args[0]) for node in ast.walk(source)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        and node.func.id == "Deduction" and node.args
+    ]
+    return {
+        "signature": function.__name__ + " " + " ".join(list(inspect.signature(function).parameters)[1:]),
+        "doc": inspect.getdoc(function),
+        "possible_deductions": deductions,
+    }
+
+
 def construction(function):
     """Validate a construction before registering its points and facts in DDAR."""
     @wraps(function)
@@ -39,7 +55,7 @@ def construction(function):
             if any(math.hypot(point.x - p.x, point.y - p.y) < 1e-10 for p in accepted):
                 return False
             accepted.append(point)
-        if not all(d.predicate.is_valid() for d in deductions):
+        if not all(problem.is_valid(d.predicate) for d in deductions):
             return False
         # Register every name before facts can reach Ascent or be extracted.
         for point in new_points:
@@ -909,9 +925,8 @@ def add_random_rabbit(problem: Problem) -> bool:
     return False
 
 
-def test_mirror_unlocks_triangle_midpoint_theorem():
-    """DDAR needs a mirror rabbit to prove the triangle midpoint theorem."""
-    import dd
+def midpoint_theorem_problem():
+    """D and E are midpoints of AB and AC; prove DE is parallel to BC."""
     from relations import Midp, Para
 
     a = Point(0, 4, "A")
@@ -921,23 +936,21 @@ def test_mirror_unlocks_triangle_midpoint_theorem():
     e = Point(2, 2, "E")
     original_points = {a, b, c, d, e}
     goal = Para(d, e, b, c)
-    problem = Problem(
+    return Problem(
         {Midp(d, a, b), Midp(e, a, c)}, {goal}, set(original_points)
     )
 
-    def run_ddar():
-        for _ in range(20):
-            previous_count = len(problem.predicates)
-            for deduction_fn in dd.functions:
-                deduction_fn(problem)
-            if not problem.is_solved():
-                problem.search_ar()
-            problem.flush_deductions()
-            if problem.is_solved() or len(problem.predicates) == previous_count:
-                return
-        assert False, "DDAR did not reach a fixed point or solve the problem"
 
-    run_ddar()
+def test_mirror_unlocks_triangle_midpoint_theorem():
+    """DDAR needs a mirror rabbit to prove the triangle midpoint theorem."""
+    from relations import Midp
+
+    problem = midpoint_theorem_problem()
+    original_points = set(problem.points)
+    by_name = {p.name: p for p in original_points}
+    d, e = by_name["D"], by_name["E"]
+    goal, = problem.goals
+    problem.run_ddar()
     assert not problem.is_solved(), "DDAR should not solve without the rabbit"
     assert goal not in problem.predicates
 
@@ -947,7 +960,7 @@ def test_mirror_unlocks_triangle_midpoint_theorem():
     assert Midp(d, e, x) in problem.predicates
     assert not problem.is_solved(), "The rabbit should not directly add the goal"
 
-    run_ddar()
+    problem.run_ddar()
     assert problem.is_solved(), "DDAR must solve with the rabbit"
     assert problem.predicates[goal]
     proof = str(problem)

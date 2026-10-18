@@ -4,7 +4,7 @@ from typing import Generic, Optional, TypeVar, Callable, Iterator
 import functools
 import itertools
 import inspect
-from math import atan2, pi, isclose
+from math import atan2, pi, isclose, remainder
 from fractions import Fraction
 
 def str_init_args(init):
@@ -471,7 +471,7 @@ class Para(Predicate):
             return False
         if len(set(line1)) == 1 or len(set(line2)) == 1:
             return False
-        if not isclose(angle_of_line(*line1) % pi, angle_of_line(*line2) % pi):
+        if not isclose(remainder(angle_of_line(*line1) - angle_of_line(*line2), pi), 0, abs_tol=1e-7):
             return False
         return True
 
@@ -577,10 +577,8 @@ class Sameclock(Predicate):
 
     def is_valid(self) -> bool:
         angles = list(self.data)
-        if len(angles) <= 2:
-            return True
         l1 = angles[0]
-        l2 = angles[1]
+        l2 = angles[-1]
         return same_orientation(list(l1), list(l2))
 
     @classmethod
@@ -655,23 +653,16 @@ class Eqratio(Predicate):
         ]
 
     def is_valid(self) -> bool:
-        ratios = list(self.data)
-        if len(ratios) <= 2:
-            return True
-        l0a, l0b = ratios[0]
-        l1a, l1b = ratios[1]
-        if (
-            len(set(l0a)) != 2
-            or len(set(l0b)) != 2
-            or len(set(l1a)) != 2
-            or len(set(l1b)) != 2
-        ):
-            return False
-        if not isclose(
-            distance(*l0a) / distance(*l0b), distance(*l1a) / distance(*l1b)
-        ):
-            return False
-        return True
+        values = []
+        for numerator, denominator in self.data:
+            if len(numerator) != 2 or len(denominator) != 2:
+                return False
+            numerator_length = distance(*numerator)
+            denominator_length = distance(*denominator)
+            if numerator_length == 0 or denominator_length == 0:
+                return False
+            values.append(numerator_length / denominator_length)
+        return all(isclose(value, values[0]) for value in values[1:])
 
     @classmethod
     def generate(cls, points: set[Point]) -> Iterator[Eqratio]:

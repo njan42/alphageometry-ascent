@@ -18,6 +18,7 @@ from relations import (
     # Aconst,
 )
 from dd import DD
+import dd
 from ar import AR
 
 
@@ -44,7 +45,7 @@ class Problem:
         self.impossible_relations = set()
 
         for predicate in predicates:
-            if predicate.is_valid():
+            if self.is_valid(predicate):
                 self._add_predicate(predicate, set(), "axiom")
             else:
                 raise ValueError(f"Invalid initial predicate: {predicate}")
@@ -53,8 +54,47 @@ class Problem:
         """Add a predicate to the deductions buffer."""
         self.deductions_buffer.append(deduction)
 
+    def is_valid(self, predicate: Predicate) -> bool:
+        """Cache numerical validity"""
+        if predicate in self.possible_relations:
+            return True
+        if predicate in self.impossible_relations:
+            return False
+        if predicate.is_valid():
+            self.possible_relations.add(predicate)
+            return True
+        self.impossible_relations.add(predicate)
+        return False
+
+    def fork(self, premises: set[Predicate], goals: set[Predicate]) -> "Problem":
+        state = Problem(set(), set(goals), set(self.points))
+        state.possible_relations = self.possible_relations
+        state.impossible_relations = self.impossible_relations
+        for predicate in premises:
+            if not state.is_valid(predicate):
+                raise ValueError(f"Invalid initial predicate: {predicate}")
+            state._add_predicate(predicate, set(), "axiom")
+        return state
+
+    def ddar_step(self, *, stop_when_solved: bool = True) -> bool:
+        previous_count = len(self.predicates)
+        for deduction_fn in dd.functions:
+            deduction_fn(self)
+        if not stop_when_solved or not self.is_solved():
+            self.search_ar()
+        self.flush_deductions()
+        return len(self.predicates) > previous_count
+
+    def run_ddar(self, *, stop_when_solved: bool = True, max_iterations: int = 50):
+        for _ in range(max_iterations):
+            if stop_when_solved and self.is_solved():
+                return
+            changed = self.ddar_step(stop_when_solved=stop_when_solved)
+            if not changed or (stop_when_solved and self.is_solved()):
+                return
+        raise RuntimeError(f"DDAR did not reach a fixed point in {max_iterations} iterations")
+
     def flush_deductions(self):
-        """Flush the deductions buffer and add predicates to the problem and DD."""
         for deduction in self.deductions_buffer:
             self._add_predicate(
                 deduction.predicate, deduction.parent_predicates, deduction.rule_name
@@ -66,14 +106,8 @@ class Problem:
         if predicate in self.predicates:
             return True
 
-        if predicate in self.impossible_relations:
+        if not self.is_valid(predicate):
             return False
-        if predicate not in self.possible_relations:
-            if predicate.is_valid():
-                self.possible_relations.add(predicate)
-            else:
-                self.impossible_relations.add(predicate)
-                return False
 
         # AR deduction
         ar_deductions = self.ar.try_deduce(predicate)
@@ -87,6 +121,8 @@ class Problem:
         parent_predicates: set[Predicate],
         rule_name: str = "unknown",
     ):
+        if not self.is_valid(predicate):
+            return
         if predicate in self.goals:
             print(f"\x1b[34mFound: {predicate}\x1b[0m via {rule_name}")
         for sub in predicate.to_sub_data():
@@ -97,19 +133,6 @@ class Problem:
         if predicate not in self.predicates:
             self.predicates[predicate] = []
 
-        if predicate in self.impossible_relations:
-            # Only errors on zero angles
-            # print(f"Predicate {predicate} is marked impossible, cannot add.")
-            return
-        if predicate not in self.possible_relations:
-            if predicate.is_valid():
-                self.possible_relations.add(predicate)
-            else:
-                # Only errors on zero angles
-                # print(f"Predicate {predicate} is invalid, marking as impossible.")
-                self.impossible_relations.add(predicate)
-                return
-
         # Store this derivation path
         deduction = Deduction(predicate, parent_predicates, rule_name)
         if deduction not in self.predicates[predicate]:
@@ -119,6 +142,8 @@ class Problem:
 
         # Handle sub-predicates
         for sub_deduction in predicate.to_sub_data():
+            if not self.is_valid(sub_deduction.predicate):
+                continue
             if sub_deduction.predicate not in self.predicates:
                 self.predicates[sub_deduction.predicate] = []
 
@@ -158,17 +183,7 @@ class Problem:
 
         for pred_class in predicate_classes:
             for predicate in pred_class.generate(self.points):
-                if predicate in self.impossible_relations:
-                    continue
-                if predicate not in self.possible_relations:
-                    if predicate.is_valid():
-                        self.possible_relations.add(predicate)
-                    else:
-                        self.impossible_relations.add(predicate)
-                        continue
-
                 if predicate not in self.predicates:
-                    # assert that the inputs are points with names
                     self.can_deduce(predicate)
 
     def __str__(self) -> str:
