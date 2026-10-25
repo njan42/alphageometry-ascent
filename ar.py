@@ -1,3 +1,5 @@
+from math import e
+
 from relations import (
     Predicate,
     Deduction,
@@ -8,6 +10,7 @@ from relations import (
 
 from elimination import (
     ElimLHS,
+    ElimRHS,
     LinComb,
     ElimAngle,
     ElimDistMul,
@@ -83,12 +86,17 @@ def _angle_row_to_formal(row: AngleRow) -> FormalAngle:
     return FormalAngle(comb)
 
 
+_log_unit = ElimRHS(e, "e")
+
+
 def _ratio_row_to_formal(row: RatioRow) -> DistMul:
     comb = LinComb.zero()
     for seg, coef in row.data.items():
         num_len = _numeric_length(seg)
         var = SegVar.get(seg, num_len)
         comb.iadd_mul(LinComb.singleton(var), coef)
+    if row.constant:
+        comb.iadd_mul(LinComb.singleton(_log_unit), -row.constant)
     return DistMul(comb)
 
 
@@ -228,6 +236,8 @@ class AR:
         self.ratio_elim.add_predicate(predicate)
 
     def try_deduce(self, predicate: Predicate) -> set[Deduction]:
+        if getattr(predicate, "ar_only", False) and not predicate.is_valid():
+            return set()
         return (
             self.angle_elim.try_deduce(predicate)
             | self.ratio_elim.try_deduce(predicate)

@@ -17,6 +17,8 @@ def _build_predicate_registry():
     for name, obj in inspect.getmembers(relations, inspect.isclass):
         # Only include classes that are subclasses of Predicate
         if issubclass(obj, Predicate) and obj is not Predicate:
+            if getattr(obj, "ar_only", False):
+                continue
             # Get the __init__ signature to determine arity
             sig = inspect.signature(obj.__init__)
             # Count parameters excluding 'self'

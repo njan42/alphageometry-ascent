@@ -4,7 +4,7 @@ from typing import Generic, Optional, TypeVar, Callable, Iterator
 import functools
 import itertools
 import inspect
-from math import atan2, pi, isclose, remainder
+from math import atan2, pi, isclose, remainder, log, fsum, isfinite
 from fractions import Fraction
 
 def str_init_args(init):
@@ -110,6 +110,8 @@ class RatioRow:
     predicate: Predicate
     data: dict[frozenset[Point], Fraction] = field(default_factory=dict)
 
+    constant: Fraction = Fraction(0)  # RHS in log space, like AngleRow
+
     def __str__(self) -> str:
         res = []
         for line, value in self.data.items():
@@ -117,11 +119,11 @@ class RatioRow:
                 continue
             line_str = "".join(sorted([str(p) for p in list(line)]))
             res.append(str(value) + " " + line_str)
-        return "0 = " + "\t+ ".join(res)
+        return str(self.constant) + " = " + "\t+ ".join(res)
 
     @property
     def is_zero_row(self) -> bool:
-        return all(value == 0 for value in self.data.values())
+        return all(value == 0 for value in self.data.values()) and self.constant == 0
 
 
 def collect_rows(
@@ -716,6 +718,68 @@ class Aconst(Predicate):
         for point_combo in itertools.permutations(points, 3):
             for m, n in angle_constants:
                 yield cls(*point_combo, m, n)
+
+
+class _WeightedEquation:
+    variable_arity = True
+    ar_only = True
+
+    @classmethod
+    def point_arg_count(cls, count):
+        n, remainder = (count - 1) // 3, (count - 1) % 3
+        if n < 1 or remainder:
+            raise ValueError(f"{cls.__name__} expects 2n points, n coefficients, and a constant")
+        return 2 * n
+
+    def __init__(self, *args):
+        count = self.point_arg_count(len(args))
+        points = args[:count]
+        coefficients = tuple(Fraction(str(c)) for c in args[count:])
+
+        self._init_args = (*points, *coefficients)
+        self.terms = {}
+        for a, b, c in zip(points[::2], points[1::2], coefficients[:-1]):
+            pair = frozenset({a, b})
+            self.terms[pair] = self.terms.get(pair, Fraction(0)) + c
+        self.terms = {pair: c for pair, c in self.terms.items() if c}
+        self.constant = coefficients[-1]
+        self.data = (frozenset(self.terms.items()), self.constant)
+
+    def _valid_equation(self, measure, period=None):
+        points = self._init_args[:self.point_arg_count(len(self._init_args))]
+        try:
+            lengths = [distance(a, b) for a, b in zip(points[::2], points[1::2])]
+            if any(not isfinite(length) or length <= 0 for length in lengths):
+                return False
+            values = [float(c) * measure(*pair) for pair, c in self.terms.items()]
+            values.append(float(self.constant))
+            if not all(isfinite(value) for value in values):
+                return False
+            total = fsum(values)
+            return isclose(remainder(total, period) if period else total, 0, abs_tol=1e-8)
+        except (ValueError, OverflowError):
+            return False
+
+
+class Angeq(_WeightedEquation, Predicate):
+    """Σ t_i direction(A_i B_i) + yπ = 0 mod π."""
+
+    def to_angle_rows(self):
+        return [AngleRow(self, constant=-self.constant, data=dict(self.terms))]
+
+    def is_valid(self):
+        return self._valid_equation(lambda a, b: (angle_of_line(a, b) / pi) % 1, period=1)
+
+
+class Distmeq(_WeightedEquation, Predicate):
+    """Σ t_i log(|A_i B_i|) + y = 0."""
+
+    def to_ratio_rows(self):
+        return [RatioRow(self, data=dict(self.terms), constant=-self.constant)]
+
+    def is_valid(self):
+        return self._valid_equation(lambda a, b: log(distance(a, b)))
+
 
 
 ## CUSTOM PREDICATES (not on the spreadsheet) ##

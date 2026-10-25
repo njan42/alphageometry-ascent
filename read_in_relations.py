@@ -48,13 +48,15 @@ def _instantiate_predicate(
     cls, arity = _PREDICATE_REGISTRY[key]
     arg_list = [a for a in args if a != ""]
 
-    if len(arg_list) != arity:
+    variable = getattr(cls, "variable_arity", False)
+    point_count = cls.point_arg_count(len(arg_list)) if variable else arity
+    if not variable and len(arg_list) != arity:
         raise ValueError(
             f"Predicate '{name}' expects {arity} arguments, got {len(arg_list)}: {arg_list}"
         )
 
     pts = []
-    for sym in arg_list:
+    for sym in arg_list[:point_count]:
         if sym not in points:
             if allow_dummy_points:
                 points[sym] = (0.0, 0.0)
@@ -65,7 +67,7 @@ def _instantiate_predicate(
         x, y = points[sym]
         pts.append(Point(name=sym, x=x, y=y))
 
-    return cls(*pts)
+    return cls(*pts, *arg_list[point_count:])
 
 
 # Match a single "point definition" segment: a@x_y = <rest>

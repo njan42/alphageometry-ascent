@@ -181,6 +181,10 @@ class Problem:
             # Aconst,
         ]
 
+        # Weighted equations have arbitrary coefficients so query explicit goals.
+        for goal in self.goals - self.predicates.keys():
+            self.can_deduce(goal)
+
         for pred_class in predicate_classes:
             for predicate in pred_class.generate(self.points):
                 if predicate not in self.predicates:
