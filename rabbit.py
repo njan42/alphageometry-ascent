@@ -995,7 +995,7 @@ def test_parallel_rabbits_unlock_ceva():
     from LM.geometry import load_problem
 
     problem = load_problem(Path(__file__).parent / "problems" / "ceva")
-    assert not problem.is_solved(), "DDAR should not solve without the rabbit"
+    assert not problem.is_solved(), "DDAR should not solve without the rabbits"
     points = {p.name: p for p in problem.points}
     a, b, c, d, e, f = (points[n] for n in "ABCDEF")
     # U = BE ∩ (parallel to BC through A), V = CF ∩ the same parallel.
@@ -1003,7 +1003,7 @@ def test_parallel_rabbits_unlock_ceva():
     assert parallel_intersection(problem, a, b, d, c, f)
     assert not problem.is_solved(), "The rabbit should not directly add the goal"
     problem.run_ddar()
-    assert problem.is_solved(), "DDAR must solve with the rabbit"
+    assert problem.is_solved(), "DDAR must solve with the rabbits"
     proof = str(problem)
     assert "rabbit:parallel_intersection" in proof
     assert "trans" in proof
@@ -1012,11 +1012,89 @@ def test_parallel_rabbits_unlock_ceva():
     return problem
 
 
+def test_double_point_rabbits_unlock_ceva_converse():
+    """Intersect CO with AB, apply the forward construction, and identify it with F."""
+    from pathlib import Path
+    from LM.geometry import load_problem
+    from relations import Eqpoint
+
+    problem = load_problem(Path(__file__).parent / "problems" / "ceva_converse")
+    assert not problem.is_solved(), "DDAR should not solve without the rabbits"
+    points = {p.name: p for p in problem.points}
+    a, b, c, d, e, f, o = (points[n] for n in "ABCDEFO")
+    before = set(problem.points)
+    assert intersect_lines(problem, a, b, c, o)
+    x, = problem.points - before
+    assert parallel_intersection(problem, a, d, c, b, e)
+    assert parallel_intersection(problem, a, b, d, c, x)
+    assert not problem.is_solved(), "The rabbits should not directly add the goal"
+    problem.run_ddar()
+    assert problem.is_solved(), "DDAR must solve with the rabbits"
+    assert Eqpoint(f, x) in problem.predicates
+    proof = str(problem)
+    assert "ratio_unique" in proof
+    assert "point_sub" in proof
+    assert "rabbit:intersect_lines" in proof
+    print(proof)
+    print("Passed: Ceva's converse identifies the constructed double point.")
+    return problem
+
+
+def test_parallel_rabbit_unlocks_menelaus():
+    """A's parallel to BC gives the two similar triangles in Menelaus's proof."""
+    from pathlib import Path
+    from LM.geometry import load_problem
+
+    problem = load_problem(Path(__file__).parent / "problems" / "menelaus")
+    assert not problem.is_solved(), "DDAR should not solve without the rabbit"
+    points = {p.name: p for p in problem.points}
+    a, b, c, d, e = (points[n] for n in "ABCDE")
+    assert parallel_intersection(problem, a, b, c, d, e)
+    assert not problem.is_solved(), "The rabbit should not directly add the goal"
+    problem.run_ddar()
+    assert problem.is_solved(), "DDAR must solve with the rabbit"
+    proof = str(problem)
+    assert "rabbit:parallel_intersection" in proof
+    print(proof)
+    print("Passed: DDAR stalls alone but solves with the intersection rabbit.")
+    return problem
+
+
+def test_double_point_rabbits_unlock_menelaus_converse():
+    """Intersect EF with BC, prove its division ratio, and identify it with D."""
+    from pathlib import Path
+    from LM.geometry import load_problem
+    from relations import Eqpoint
+
+    problem = load_problem(Path(__file__).parent / "problems" / "menelaus_converse")
+    assert not problem.is_solved(), "DDAR should not solve without the rabbits"
+    points = {p.name: p for p in problem.points}
+    a, b, c, d, e, f = (points[n] for n in "ABCDEF")
+    before = set(problem.points)
+    assert intersect_lines(problem, e, f, b, c)
+    x, = problem.points - before
+    assert parallel_intersection(problem, a, b, c, e, f)
+    assert not problem.is_solved(), "The rabbits should not directly add the goal"
+    problem.run_ddar()
+    assert problem.is_solved(), "DDAR must solve with the rabbits"
+    assert Eqpoint(d, x) in problem.predicates
+    proof = str(problem)
+    assert "ratio_unique" in proof
+    assert "point_sub" in proof
+    assert "rabbit:intersect_lines" in proof
+    print(proof)
+    print("Passed: Menelaus's converse identifies the constructed double point.")
+    return problem
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Test hand-picked rabbit proofs without an agent.")
     tests = {"midpoint": test_mirror_unlocks_triangle_midpoint_theorem,
-             "ceva": test_parallel_rabbits_unlock_ceva}
+             "ceva": test_parallel_rabbits_unlock_ceva,
+             "ceva-converse": test_double_point_rabbits_unlock_ceva_converse,
+             "menelaus": test_parallel_rabbit_unlocks_menelaus,
+             "menelaus-converse": test_double_point_rabbits_unlock_menelaus_converse}
     parser.add_argument("--test", choices=(*tests.keys(), "all"), default="all")
     selected = parser.parse_args().test
     for name, test in tests.items():

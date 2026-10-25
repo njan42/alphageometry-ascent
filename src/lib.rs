@@ -179,10 +179,11 @@ mod rules {
     }
 
     ascent::ascent_source! { equality:
+
+        // Equal point is a equivalence relation
         eqpoint(b, a, proof("sym", vec![fact_id("eqpoint", [a, b])]))
             <-- eqpoint(a, b, ?_p), if a != b;
         eqpoint(a, a, proof("rfl", vec![])) <-- point(a);
-
         eqpoint(a, c, proof("trans", vec![
             fact_id("eqpoint", [a, b]),
             fact_id("eqpoint", [b, c])
@@ -190,17 +191,18 @@ mod rules {
             eqpoint(a, b, ?_p), eqpoint(b, c, ?_q),
             if a != b && b != c && a != c;
 
+        // Intersection point is collinear with each line
         col(x, a, b, proof("inter_incid", vec![fact_id("inter", [x, a, b, c, d])])),
         col(x, c, d, proof("inter_incid", vec![fact_id("inter", [x, a, b, c, d])]))
             <-- inter(x, a, b, c, d, ?_p);
 
+        // Intersection point is unique to the two lines
         inter(x, a, b, c, d, proof("inter", vec![
             fact_id("col", [x, a, b]),
             fact_id("col", [x, c, d])
         ])) <--
             col(x, a, b, ?_p), col(x, c, d, ?_q),
             nonparallel(a, b, c, d);
-
         eqpoint(x, y, proof("inter_unique", vec![
             fact_id("inter", [x, a, b, c, d]),
             fact_id("col", [y, a, b]),
@@ -209,6 +211,19 @@ mod rules {
             inter(x, a, b, c, d, ?_p),
             col(y, a, b, ?_q), col(y, c, d, ?_r), if x != y,
             nonparallel(a, b, c, d);
+
+        // Equal division ratios imply a double point. Orientation distinguishes
+        // whether it's in the internal or external region.
+        eqpoint(x, y, proof("ratio_unique", vec![
+            fact_id("col", [a, x, b]), fact_id("col", [a, y, b]),
+            fact_id("eqratio", [a, x, x_prime, b, a_prime, y, y_prime, b_prime])
+        ])) <--
+            col(a, x, b, ?_p), col(a, y, b, ?_q),
+            eqratio(a, x, x_prime, b, a_prime, y, y_prime, b_prime, ?_ratio),
+            if a == a_prime && b == b_prime && x == x_prime && y == y_prime && x != y,
+            noncollinear(a, b, o),
+            same_orientation!(a, x, o, a, y, o),
+            same_orientation!(x, b, o, y, b, o);
     }
 
     substitution_source! { substitution {

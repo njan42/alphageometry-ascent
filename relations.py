@@ -739,8 +739,20 @@ class Eqratio(Predicate):
 
     @classmethod
     def generate(cls, points: set[Point]) -> Iterator[Eqratio]:
-        for p in itertools.permutations(points, 8):
-            yield cls(*p)
+        lengths = {pair: distance(*pair) for pair in itertools.combinations(points, 2)}
+        segments = [(pair, length) for pair, length in lengths.items()
+                    if isfinite(length) and length > 0]
+        ratios = sorted(
+            ((nl / dl, numerator, denominator)
+             for (numerator, nl), (denominator, dl) in itertools.product(segments, repeat=2)),
+            key=lambda item: item[0],
+        )
+        for i, (value, ab, cd) in enumerate(ratios):
+            for j in range(i + 1, len(ratios)):
+                other, ef, gh = ratios[j]
+                if not isclose(value, other):
+                    break
+                yield cls(*ab, *cd, *ef, *gh)
 
 
 class Aconst(Predicate):

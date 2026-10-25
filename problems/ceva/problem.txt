@@ -11,4 +11,7 @@ col A F B;
 col A O D;
 col B O E;
 col C O F;
+sameclock B D A D C A;
+sameclock C E B E A B;
+sameclock A F C F B C;
 ? distmeq B D D C C E E A A F F B 1 -1 1 -1 1 -1 0

@@ -1,0 +1,14 @@
+A@0.0_5.0 = ;
+B@-4.0_0.0 = ;
+C@6.0_0.0 = ;
+D@16.0_0.0 = ;
+E@3.0_2.5 = ;
+F@-1.3333333333333333_3.3333333333333335 = ;
+col B D C;
+col C E A;
+col A F B;
+sameclock B D A C D A;
+sameclock C E B E A B;
+sameclock A F C F B C;
+col D E F;
+? distmeq B D D C C E E A A F F B 1 -1 1 -1 1 -1 0
