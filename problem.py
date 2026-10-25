@@ -124,6 +124,11 @@ class Problem:
     ):
         if not self.is_valid(predicate):
             return
+        if predicate in self.predicates:
+            deduction = Deduction(predicate, parent_predicates, rule_name)
+            if deduction not in self.predicates[predicate]:
+                self.predicates[predicate].append(deduction)
+            return  # New proof paths do not require reinserting the same fact.
         if predicate in self.goals:
             print(f"\x1b[34mFound: {predicate}\x1b[0m via {rule_name}")
         for sub in predicate.to_sub_data():

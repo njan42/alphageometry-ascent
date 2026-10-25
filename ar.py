@@ -109,7 +109,7 @@ class ElimAngleAR:
     def add_predicate(self, predicate: Predicate) -> None:
         rows: list[AngleRow] = predicate.to_angle_rows()
         for row in rows:
-            if not row.data:
+            if not row.data or any(_numeric_length(pair) <= 1e-10 for pair in row.data):
                 continue
             angle = _angle_row_to_formal(row)
             # Check numerical validity before forcing with Cyclic
@@ -120,7 +120,7 @@ class ElimAngleAR:
 
     def try_deduce(self, predicate: Predicate) -> set[Deduction]:
         rows: list[AngleRow] = predicate.to_angle_rows()
-        if not rows:
+        if not rows or any(_numeric_length(pair) <= 1e-10 for row in rows for pair in row.data):
             return set()
 
         # implicit: row has no data (always zero) → trivially true
@@ -135,7 +135,7 @@ class ElimAngleAR:
         all_sources: set[Predicate] = set()
         is_deduced = True
         for row in rows:
-            if not row.data:
+            if not row.data or any(_numeric_length(pair) <= 1e-10 for pair in row.data):
                 continue
             angle = _angle_row_to_formal(row)
             simplified, sources = self.elim.simplify(angle)
@@ -171,7 +171,7 @@ class ElimRatioAR:
     def add_predicate(self, predicate: Predicate) -> None:
         rows: list[RatioRow] = predicate.to_ratio_rows()
         for row in rows:
-            if not row.data:
+            if not row.data or any(_numeric_length(pair) <= 1e-10 for pair in row.data):
                 continue
             dist = _ratio_row_to_formal(row)
             # force_one: the product (in ratio space) equals 1
@@ -183,7 +183,7 @@ class ElimRatioAR:
 
     def try_deduce(self, predicate: Predicate) -> set[Deduction]:
         rows: list[RatioRow] = predicate.to_ratio_rows()
-        if not rows:
+        if not rows or any(_numeric_length(pair) <= 1e-10 for row in rows for pair in row.data):
             return set()
 
         implicit = set()
@@ -197,7 +197,7 @@ class ElimRatioAR:
         all_sources: set[Predicate] = set()
         is_deduced = True
         for row in rows:
-            if not row.data:
+            if not row.data or any(_numeric_length(pair) <= 1e-10 for pair in row.data):
                 continue
             dist = _ratio_row_to_formal(row)
             simplified, sources = self.elim.simplify(dist)

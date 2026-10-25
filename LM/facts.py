@@ -1,5 +1,5 @@
 """Serialize known DDAR facts and simplify them."""
-from relations import Sameclock, Cong, Para, Eqangle, Eqratio, Simtri1, Contri1
+from relations import Eqpoint, Sameclock, Cong, Para, Eqangle, Eqratio, Simtri1, Contri1
 
 
 def serialize_facts(facts):
@@ -8,6 +8,8 @@ def serialize_facts(facts):
 
 def useful_for_prompt(fact):
     """Omit irrelevant identities."""
+    if isinstance(fact, Eqpoint) and len(fact.data) == 1:
+        return False
     if isinstance(fact, Sameclock):
         return False
     if isinstance(fact, (Cong, Para, Eqangle, Eqratio)) and len(fact.data) == 1:

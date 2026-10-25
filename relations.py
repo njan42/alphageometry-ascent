@@ -228,6 +228,59 @@ class Predicate(Generic[T]):
             )
 
 
+class Eqpoint(Predicate):
+    """Two named points coincide; numerical agreement only validates a proof."""
+
+    @str_init_args
+    def __init__(self, a: Point, b: Point):
+        self.data = frozenset({a, b})
+
+    def is_valid(self):
+        a, b = self._init_args
+        return distance(a, b) <= 1e-10
+
+
+class Distinct(Predicate):
+    """A and B have distinct positions."""
+
+    @str_init_args
+    def __init__(self, a: Point, b: Point):
+        self.data = frozenset({a, b})
+
+    def is_valid(self):
+        a, b = self._init_args
+        length = distance(a, b)
+        return isfinite(length) and length > 1e-10
+
+
+class Nonparallel(Predicate):
+    """The nonzero lines AB and CD have different directions."""
+
+    @str_init_args
+    def __init__(self, a: Point, b: Point, c: Point, d: Point):
+        self.data = frozenset({frozenset({a, b}), frozenset({c, d})})
+
+    def is_valid(self):
+        a, b, c, d = self._init_args
+        if not Distinct(a, b).is_valid() or not Distinct(c, d).is_valid():
+            return False
+        ux, uy, vx, vy = b.x - a.x, b.y - a.y, d.x - c.x, d.y - c.y
+        scale = distance(a, b) * distance(c, d)
+        return isfinite(scale) and abs(ux * vy - uy * vx) > 1e-10 * scale
+
+
+class Noncollinear(Predicate):
+    """A, B, C form a nondegenerate triangle."""
+
+    @str_init_args
+    def __init__(self, a: Point, b: Point, c: Point):
+        self.data = frozenset({a, b, c})
+
+    def is_valid(self):
+        a, b, c = self._init_args
+        return Nonparallel(a, b, a, c).is_valid()
+
+
 class Col(Predicate):
     """A B C are collinear"""
 
@@ -239,6 +292,12 @@ class Col(Predicate):
 
     def to_angle_rows(self) -> list[AngleRow]:
         return collect_rows(self.data, Para, lambda p: p.to_angle_rows())
+
+    def is_valid(self):
+        a, b, c = self._init_args
+        ux, uy, vx, vy = b.x - a.x, b.y - a.y, c.x - a.x, c.y - a.y
+        scale = (ux * ux + uy * uy) ** 0.5 * (vx * vx + vy * vy) ** 0.5
+        return isfinite(scale) and abs(ux * vy - uy * vx) <= 1e-7 * scale
 
     @classmethod
     def generate(cls, points: set[Point]) -> Iterator[Col]:
@@ -272,6 +331,8 @@ class Perp(Predicate):
         if line1 == line2:
             return False
         if len(set(line1)) == 1 or len(set(line2)) == 1:
+            return False
+        if distance(*line1) <= 1e-10 or distance(*line2) <= 1e-10:
             return False
         if not isclose(
             abs(angle_of_line(*line1) - angle_of_line(*line2)) % pi,
@@ -307,6 +368,8 @@ class Cong(Predicate):
 
     def is_valid(self) -> bool:
         lines = list(self.data)
+        if any(len(line) != 2 or distance(*line) <= 1e-10 for line in lines):
+            return False
         if len(lines) < 2:
             return True
         line1, line2 = lines
@@ -408,6 +471,8 @@ class Eqangle(Predicate):
 
     def is_valid(self) -> bool:
         angles = list(self.data)
+        if any(distance(a, b) <= 1e-10 or distance(b, c) <= 1e-10 for a, b, c in angles):
+            return False
         if len(set(angles)) > 2:
             return False
         if len(set(angles)) == 1:
@@ -472,6 +537,8 @@ class Para(Predicate):
         if line1 == line2:
             return False
         if len(set(line1)) == 1 or len(set(line2)) == 1:
+            return False
+        if distance(*line1) <= 1e-10 or distance(*line2) <= 1e-10:
             return False
         if not isclose(remainder(angle_of_line(*line1) - angle_of_line(*line2), pi), 0, abs_tol=1e-7):
             return False
@@ -603,6 +670,10 @@ class Midp(Predicate):
 
     def to_ratio_rows(self) -> list[RatioRow]:
         return collect_rows(self.data, Cong, lambda p: p.to_ratio_rows())
+
+    def is_valid(self):
+        _, a, b = self._init_args
+        return distance(a, b) > 1e-10 and super().is_valid()
 
     @classmethod
     def generate(cls, points: set[Point]) -> Iterator[Midp]:
@@ -782,16 +853,20 @@ class Distmeq(_WeightedEquation, Predicate):
 
 
 
-## CUSTOM PREDICATES (not on the spreadsheet) ##
-# intersect A B C D E
-# class Inter(Predicate):
-#     """A is the intersection of line BC and line DE"""
-#
-#     data: frozenset[Predicate]
-#
-#     @str_init_args
-#     def __init__(self, a: Point, b: Point, c: Point, d: Point, e: Point):
-#         self.data = frozenset([Col(a, b, c), Col(a, d, e)])
-#
-#     def to_angle_rows(self) -> list[AngleRow]:
-#         return collect_rows(self.data, Col, lambda p: p.to_angle_rows())
+class Inter(Predicate):
+    """X is the unique intersection of the nonparallel lines AB and CD."""
+
+    @str_init_args
+    def __init__(self, x: Point, a: Point, b: Point, c: Point, d: Point):
+        self.data = frozenset({Col(x, a, b), Col(x, c, d)})
+
+    def to_angle_rows(self):
+        return collect_rows(self.data, Col, lambda p: p.to_angle_rows())
+
+    def is_valid(self):
+        _, a, b, c, d = self._init_args
+        ux, uy, vx, vy = b.x - a.x, b.y - a.y, d.x - c.x, d.y - c.y
+        scale = distance(a, b) * distance(c, d)
+        return (isfinite(scale) and distance(a, b) > 1e-10 and distance(c, d) > 1e-10
+                and abs(ux * vy - uy * vx) > 1e-10 * scale
+                and all(fact.is_valid() for fact in self.data))

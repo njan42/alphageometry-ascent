@@ -2,7 +2,6 @@
 
 from .ascent_py import DeductiveDatabase as _DeductiveDatabase
 from typing import List, Tuple
-import itertools
 
 
 class DeductiveDatabase:
@@ -12,9 +11,24 @@ class DeductiveDatabase:
         self._prog = _DeductiveDatabase()
 
     # Input methods
-    def add_point(self, x: int = 0, y: int = 0, name: str = ""):
+    def add_point(self, x: float = 0, y: float = 0, name: str = ""):
         """Add a point to the geometry with coordinates"""
-        self._prog.add_point(int(x), int(y), name)
+        self._prog.add_point(x, y, name)
+
+    def add_distinct(self, a: str, b: str):
+        self._prog.add_distinct(a, b)
+
+    def add_nonparallel(self, a: str, b: str, c: str, d: str):
+        self._prog.add_nonparallel(a, b, c, d)
+
+    def add_noncollinear(self, a: str, b: str, c: str):
+        self._prog.add_noncollinear(a, b, c)
+
+    def add_eqpoint(self, a: str, b: str):
+        self._prog.add_eqpoint(a, b)
+
+    def add_inter(self, x: str, a: str, b: str, c: str, d: str):
+        self._prog.add_inter(x, a, b, c, d)
 
     def add_col(self, a: str, b: str, c: str):
         """Add collinearity fact: points a, b, c are collinear"""
@@ -79,6 +93,21 @@ class DeductiveDatabase:
         self._prog.run()
 
     # Output methods - now return full derivation information
+    def get_distinct(self):
+        return self._prog.get_distinct()
+
+    def get_nonparallel(self):
+        return self._prog.get_nonparallel()
+
+    def get_noncollinear(self):
+        return self._prog.get_noncollinear()
+
+    def get_eqpoint(self):
+        return self._prog.get_eqpoint()
+
+    def get_inter(self):
+        return self._prog.get_inter()
+
     def get_col(self) -> List[Tuple[str, str, str, List[Tuple[str, List[str]]]]]:
         """
         Get all deduced collinear point sets with full derivation provenance.

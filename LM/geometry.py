@@ -32,7 +32,7 @@ def apply_construction(problem, command):
     if len(set(names)) != len(names):
         raise ValueError("Construction input points must be distinct")
     if not function(problem, *(points[name] for name in names)):
-        raise ValueError("Construction is degenerate, coincident, or numerically invalid")
+        raise ValueError("Construction is degenerate or numerically invalid")
 
 
 def clone_problem(problem):

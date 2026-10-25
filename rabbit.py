@@ -48,13 +48,13 @@ def construction(function):
         new_points = staged.points - problem.points
         if not new_points or not deductions:
             return False
-        accepted = list(problem.points)
+        used_names = {p.name for p in problem.points}
         for point in sorted(new_points, key=lambda p: p.name):
             if not (math.isfinite(point.x) and math.isfinite(point.y)):
                 return False
-            if any(math.hypot(point.x - p.x, point.y - p.y) < 1e-10 for p in accepted):
+            if not point.name or point.name in used_names:
                 return False
-            accepted.append(point)
+            used_names.add(point.name)
         if not all(problem.is_valid(d.predicate) for d in deductions):
             return False
         # Register every name before facts can reach Ascent or be extracted.
@@ -849,6 +849,7 @@ def tangent(problem: Problem, a: Point, o: Point, b: Point) -> bool:
 def intersect_lines(problem: Problem, a: Point, o: Point, b: Point,
                     d: Point) -> bool:
     """Construct the intersection point of line AO and line BD."""
+    from relations import Inter
     # Line AO direction
     dx1 = o.x - a.x
     dy1 = o.y - a.y
@@ -883,8 +884,7 @@ def intersect_lines(problem: Problem, a: Point, o: Point, b: Point,
     problem.points.add(X)
 
     # Add deductions: X is on both lines
-    problem.add_deduction(Deduction(Col(a, X, o), set()))
-    problem.add_deduction(Deduction(Col(b, X, d), set()))
+    problem.add_deduction(Deduction(Inter(X, a, o, b, d), set()))
 
     return True
 

@@ -1,0 +1,15 @@
+A@-3_0 = ;
+B@3_0 = ;
+C@0_-3 = ;
+D@0_3 = ;
+X@0_0 = ;
+T@0_0 = ;
+U@2_0 = ;
+V@0_2 = ;
+W@2_2 = ;
+inter X A B C D;
+col T A B;
+col T C D;
+cyclic T U V W;
+? eqpoint X T;
+? cyclic X U V W

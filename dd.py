@@ -69,9 +69,7 @@ class DD:
     def add_point(self, point: Point):
         """Add a point to the database and maintain mappings."""
         if point not in self.name_by_point:
-            x = int(point.x * 100)
-            y = int(point.y * 100)
-            self.db.add_point(x, y, point.name)
+            self.db.add_point(point.x, point.y, point.name)
             self.point_by_name[point.name] = point
             self.name_by_point[point] = point.name
 
@@ -96,10 +94,8 @@ class DD:
         _, expected_arity, db_method = _PREDICATE_REGISTRY[pred_type]
 
         if len(predicate._init_args) == expected_arity:
-            # TODO: Make this extendable to predicates like Aconst which have nonpoint inputs
-
-            # Extract point names from the init args
-            point_names = [pt.name for pt in predicate._init_args]
+            # Keep scalar parameters (for example Aconst m/n) unchanged.
+            point_names = [pt.name if isinstance(pt, Point) else pt for pt in predicate._init_args]
             # Get the database method (e.g., db.add_collinear)
             method = getattr(self.db, f"add_{db_method}")
             method(*point_names)
@@ -114,7 +110,7 @@ class DD:
 
     def _make_fact_id(self, pred_type: str, point_names: list[str]) -> str:
         """Create a fact ID string matching the Rust implementation."""
-        return f"{pred_type}({','.join(point_names)})"
+        return f"{pred_type}({','.join(map(str, point_names))})"
 
     def get_new_deductions(self) -> set[Deduction]:
         """
@@ -124,59 +120,24 @@ class DD:
         Returns:
             Set of newly deduced Deduction objects (one per derivation path)
         """
-        # PASS 1: Extract all predicates and build fact_id mappings
-        all_predicates = {}
+        records = []
+        for pred_name, (pred_class, _, db_method) in _PREDICATE_REGISTRY.items():
+            for *args, derivations in getattr(self.db, f"get_{db_method}")():
+                pred = self._extract_predicate(pred_class, tuple(args))
+                identifier = self._make_fact_id(pred_name, args)
+                self._fact_id_to_predicate[identifier] = pred
+                records.append((pred, derivations))
 
-        for pred_name, (pred_class, arity, db_method) in _PREDICATE_REGISTRY.items():
-            getter = getattr(self.db, f"get_{db_method}")
-            data = getter()
-
-            for item in data:
-                *point_names, derivations = item
-                pred = self._extract_predicate(pred_class, tuple(point_names))
-                fact_id = self._make_fact_id(pred_name, point_names)
-
-                all_predicates[fact_id] = pred
-                self._fact_id_to_predicate[fact_id] = pred
-
-        # PASS 2: Build separate deductions for each derivation path
-        new_deductions = set()
-
-        for pred_name, (pred_class, arity, db_method) in _PREDICATE_REGISTRY.items():
-            getter = getattr(self.db, f"get_{db_method}")
-            data = getter()
-
-            for item in data:
-                *point_names, derivations = item
-                fact_id = self._make_fact_id(pred_name, point_names)
-                pred = all_predicates[fact_id]
-
-                if pred not in self._extracted_predicates:
-                    for rule_name, parent_fact_ids in derivations:
-                        if rule_name == "axiom":
-                            continue
-                        parent_predicates = set()
-
-                        for parent_fact_id in parent_fact_ids:
-                            if parent_fact_id in self._fact_id_to_predicate:
-                                parent_predicates.add(
-                                    self._fact_id_to_predicate[parent_fact_id]
-                                )
-                            else:
-                                print(
-                                    f"Warning: Missing parent fact {parent_fact_id} for rule {rule_name}"
-                                )
-
-                        deduction = Deduction(
-                            predicate=pred,
-                            parent_predicates=parent_predicates,
-                            rule_name=rule_name,
-                        )
-                        new_deductions.add(deduction)
-
-                    self._extracted_predicates.add(pred)
-
-        return new_deductions
+        deductions = set()
+        previously_extracted = set(self._extracted_predicates)
+        for pred, paths in records:
+            if pred in previously_extracted:
+                continue
+            for rule, parents in paths:
+                if rule != "axiom":
+                    deductions.add(Deduction(pred, {self._fact_id_to_predicate[p] for p in parents}, rule))
+        self._extracted_predicates.update(pred for pred, _ in records)
+        return deductions
 
     def _extract_predicate(
         self, pred_class: type, point_names: tuple[str, ...]
@@ -191,7 +152,7 @@ class DD:
         Returns:
             Instantiated Predicate object
         """
-        points = [self.point_by_name[name] for name in point_names]
+        points = [self.point_by_name[arg] if isinstance(arg, str) else arg for arg in point_names]
         return pred_class(*points)
 
     def _build_parent_predicates(

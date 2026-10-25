@@ -25,6 +25,7 @@ Perform selection silently; output only construction invocations.
 Use only signatures listed in constructions, with exactly the required number and order of existing point arguments.
 Use only names from the actual input diagram. Never reference a point introduced by another candidate.
 Do not append names for constructed points; auxiliary points are named automatically.
+A construction may introduce a new name at an existing location. This is useful when it establishes new incidences; DDAR must prove eqpoint before transferring facts between the names.
 Each line must contain exactly one construction invocation. Do not invent signatures or modify their arguments.
 Do not treat conditional deductions as unconditional.
 Avoid constructions that repeat established facts without providing a meaningful new proof route.
