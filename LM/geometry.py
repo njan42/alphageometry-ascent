@@ -38,6 +38,7 @@ def apply_construction(problem, command):
 def clone_problem(problem):
     """Copy the symbolic state while preserving derivations."""
     state = Problem(set(), set(problem.goals), set(problem.points))
+    state.proof_predicates = {p: list(ds) for p, ds in problem.proof_predicates.items()}
     state.possible_relations = set(problem.possible_relations)
     state.impossible_relations = set(problem.impossible_relations)
     for fact, derivations in problem.predicates.items():

@@ -36,6 +36,7 @@ class Problem:
         self, predicates: set[Predicate], goals: set[Predicate], points: set[Point]
     ):
         self.predicates = {}
+        self.proof_predicates = {}  # Witnesses for shared lemmas; outside DDAR.
         self.goals = goals
         self.points = points
         self.dd = DD(points, set())
@@ -201,6 +202,10 @@ class Problem:
         if not self.goals:
             return "No goals specified"
 
+        predicates = {p: list(ds) for p, ds in self.proof_predicates.items()}
+        for p, ds in self.predicates.items():
+            predicates.setdefault(p, []).extend(ds)
+
         RULE_PRIORITY = {
             "axiom": 0,
             "rfl": 1,
@@ -223,8 +228,8 @@ class Problem:
                     continue
 
                 reachable.add(current)
-                if current in self.predicates:
-                    for deduction in self.predicates[current]:
+                if current in predicates:
+                    for deduction in predicates[current]:
                         new_parents = deduction.parent_predicates - reachable
                         to_visit.update(new_parents)
 
@@ -243,7 +248,7 @@ class Problem:
         ordered_predicates: list[tuple[Predicate, Deduction]] = []
 
         # Start with axioms
-        for pred, deductions in self.predicates.items():
+        for pred, deductions in predicates.items():
             if pred not in goal_reachable_predicates:
                 continue
             axiom_deductions = [d for d in deductions if len(d.parent_predicates) == 0]
@@ -266,7 +271,7 @@ class Problem:
                 )
             prev_used_count = current_count
 
-            for predicate, deductions in self.predicates.items():
+            for predicate, deductions in predicates.items():
                 if predicate not in goal_reachable_predicates:
                     continue
                 if predicate in used_predicates:

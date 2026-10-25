@@ -9,20 +9,24 @@ except ImportError as error:
     raise SystemExit("Install the MCP extra first: uv sync --extra mcp") from error
 
 from LM import geometry
+from LM.shared import SharedKnowledge
 
 server = MCPServer(
     "AlphaGeometry",
     instructions="Use load_problem, get_state, and list_constructions to inspect a problem. "
     "try_construction tests on a separate branch and runs DDAR. Continue with its returned "
     "problem_id to keep the branch, or reuse the previous id to discard it. "
+    "Use share_facts to transfer proved original-point lemmas between sibling branches. "
     "Only DDAR establishes proof facts. Use get_proof when solved.",
 )
 problems = {}
+knowledge = {}
 
 
-def remember(problem):
+def remember(problem, shared=None):
     identifier = uuid4().hex
     problems[identifier] = problem
+    knowledge[identifier] = shared if shared is not None else SharedKnowledge(problem)
     return {"problem_id": identifier, **geometry.state_dict(problem)}
 
 
@@ -79,7 +83,27 @@ async def try_construction(problem_id: str, construction: str, inputs: list[str]
         branch, result = geometry.try_construction(
             lookup(problem_id), " ".join([construction, *inputs])
         )
-    return {**result, **remember(branch)} if branch is not None else {**result, "problem_id": problem_id}
+    return {**result, **remember(branch, knowledge[problem_id])} if branch is not None else {**result, "problem_id": problem_id}
+
+
+@server.tool()
+async def share_facts(source_id: str, target_id: str) -> dict:
+    """Copy a target branch and add proved original-point facts from a sibling.
+
+    Auxiliary points stay private to their branch. Full proof witnesses are kept.
+    Continue with the returned problem_id; both input branches remain unchanged.
+    """
+    source, target = lookup(source_id), lookup(target_id)
+    if knowledge[source_id] is not knowledge[target_id]:
+        raise ToolError("Branches must come from the same load_problem call")
+    shared = knowledge[source_id]
+    with redirect_stdout(sys.stderr):
+        shared.collect(source)
+        branch = geometry.clone_problem(target)
+        added = shared.apply(branch)
+        branch.run_ddar()
+    return {"shared_predicates": geometry.serialize_facts(added),
+            **remember(branch, shared)}
 
 
 @server.tool()
@@ -94,6 +118,7 @@ async def discard_problem(problem_id: str) -> dict:
     """Release a problem/branch that is no longer needed."""
     lookup(problem_id)
     del problems[problem_id]
+    del knowledge[problem_id]
     return {"discarded": problem_id}
 
 

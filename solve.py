@@ -67,7 +67,7 @@ def construct_problem(
 def prove(
     problem: Problem, rabbit_mode: str = "none", *,
     agent_provider=None, agent_model=None, agent_timeout=120,
-    agent_attempts=10, agent_batch_size=3, agent_log=None
+    agent_attempts=10, agent_batch_size=3, agent_beam_width=1, agent_log=None
 ):
     if rabbit_mode not in {"none", "random", "agent"}:
         raise ValueError(f"Unknown rabbit mode: {rabbit_mode}")
@@ -123,7 +123,7 @@ def prove(
                 provider = CLIProvider(agent_provider, model=agent_model,
                                        timeout=agent_timeout, log=log)
                 problem = AgentSolver(provider, attempts=agent_attempts,
-                                      batch_size=agent_batch_size, log=log
+                                      batch_size=agent_batch_size, beam_width=agent_beam_width, log=log
                                       ).solve(problem, initial_saturated=True)
                 break
             changed = rabbit.add_random_rabbit(problem)
@@ -156,12 +156,13 @@ def main():
     parser.add_argument("--agent-timeout", type=float, default=120, help="seconds per CLI call")
     parser.add_argument("--agent-attempts", type=int, default=10, help="total construction trials")
     parser.add_argument("--agent-batch-size", type=int, default=3)
+    parser.add_argument("--agent-beam-width", type=int, default=1, help="branches retained per search depth")
     parser.add_argument("--agent-log", help="JSONL event log path (default: a new file in LM/logs)")
     args = parser.parse_args()
     if not math.isfinite(args.agent_timeout) or args.agent_timeout <= 0:
         parser.error("--agent-timeout must be finite and positive")
-    if args.agent_attempts < 1 or args.agent_batch_size < 1:
-        parser.error("--agent-attempts and --agent-batch-size must be positive")
+    if args.agent_attempts < 1 or args.agent_batch_size < 1 or args.agent_beam_width < 1:
+        parser.error("--agent-attempts, --agent-batch-size, and --agent-beam-width must be positive")
     problem_dir = args.problem_directory
     ggb_file = f"{problem_dir}/problem.ggb"
     problem_file = f"{problem_dir}/problem.txt"
@@ -175,6 +176,7 @@ def main():
             prove(problem, rabbit_mode="agent", agent_provider=args.agent_provider,
                   agent_model=args.agent_model, agent_timeout=args.agent_timeout,
                   agent_attempts=args.agent_attempts, agent_batch_size=args.agent_batch_size,
+                  agent_beam_width=args.agent_beam_width,
                   agent_log=args.agent_log)
         except (ValueError, RuntimeError) as error:
             parser.exit(2, f"Error: {error}\n")
