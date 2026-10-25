@@ -889,6 +889,25 @@ def intersect_lines(problem: Problem, a: Point, o: Point, b: Point,
     return True
 
 
+@construction
+def parallel_intersection(problem: Problem, a: Point, b: Point, c: Point,
+                          d: Point, e: Point) -> bool:
+    """Intersect DE with the line through A parallel to BC."""
+    from relations import Para
+
+    ux, uy = c.x - b.x, c.y - b.y
+    vx, vy = e.x - d.x, e.y - d.y
+    det = ux * vy - uy * vx
+    if abs(det) < 1e-10:
+        return False
+    t = ((d.x - a.x) * vy - (d.y - a.y) * vx) / det
+    X = Point(a.x + t * ux, a.y + t * uy, next_name("X", problem=problem))
+    problem.points.add(X)
+    problem.add_deduction(Deduction(Para(a, X, b, c), set()))
+    problem.add_deduction(Deduction(Col(d, X, e), set()))
+    return True
+
+
 rabbits = [
     angle_bisector,
     circle,
@@ -907,6 +926,7 @@ rabbits = [
     on_dia,
     tangent,
     intersect_lines,
+    parallel_intersection,
 ]
 
 
@@ -969,5 +989,38 @@ def test_mirror_unlocks_triangle_midpoint_theorem():
     print("Passed: DDAR stalls alone but solves with the mirror rabbit.")
 
 
+def test_parallel_rabbits_unlock_ceva():
+    """The two intersections of A's parallel to BC give the usual Ceva proof."""
+    from pathlib import Path
+    from LM.geometry import load_problem
+
+    problem = load_problem(Path(__file__).parent / "problems" / "ceva")
+    assert not problem.is_solved(), "DDAR should not solve without the rabbit"
+    points = {p.name: p for p in problem.points}
+    a, b, c, d, e, f = (points[n] for n in "ABCDEF")
+    # U = BE ∩ (parallel to BC through A), V = CF ∩ the same parallel.
+    assert parallel_intersection(problem, a, d, c, b, e)
+    assert parallel_intersection(problem, a, b, d, c, f)
+    assert not problem.is_solved(), "The rabbit should not directly add the goal"
+    problem.run_ddar()
+    assert problem.is_solved(), "DDAR must solve with the rabbit"
+    proof = str(problem)
+    assert "rabbit:parallel_intersection" in proof
+    assert "trans" in proof
+    print(proof)
+    print("Passed: DDAR stalls alone but solves with the intersection rabbits.")
+    return problem
+
+
 if __name__ == "__main__":
-    test_mirror_unlocks_triangle_midpoint_theorem()
+    import argparse
+    parser = argparse.ArgumentParser(description="Test hand-picked rabbit proofs without an agent.")
+    tests = {"midpoint": test_mirror_unlocks_triangle_midpoint_theorem,
+             "ceva": test_parallel_rabbits_unlock_ceva}
+    parser.add_argument("--test", choices=(*tests.keys(), "all"), default="all")
+    selected = parser.parse_args().test
+    for name, test in tests.items():
+        if selected in (name, "all"):
+            print(f"Running test: {name}")
+            test()
+            print()

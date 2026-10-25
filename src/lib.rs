@@ -374,6 +374,15 @@ impl DeductiveDatabase {
             // Deductive Rules
             // ----------------------------------------------------------------
 
+            // Two distinct points determine lines
+            col(a, c, d, Provenance::from("trans", vec![
+                fact_id("col", [a, b, c]),
+                fact_id("col", [a, b, d])
+            ])) <--
+                col(a, b, c, ?_prov1), col(a, b, d, ?_prov2),
+                if a != b && a != c && a != d &&
+                   b != c && b != d && c != d;
+
             // Right Angle Equal
             eqangle(c, b, a, b, e, a, Provenance::from("right_angle_eq", vec![
                 fact_id("perp", [a, b, b_prime, c]),
