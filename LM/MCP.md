@@ -18,25 +18,25 @@ Choose the host you want to use. Each registration captures the absolute
 checkout directory through `$PWD`, so the server also works when the host
 starts from another directory.
 
-Antigravity:
+### Antigravity
 
 ```sh
 agy mcp add alphageometry -- uv --directory "$PWD" run --extra mcp python -m LM.mcp_server
 ```
 
-Codex:
+### Codex
 
 ```sh
 codex mcp add alphageometry -- uv --directory "$PWD" run --extra mcp python -m LM.mcp_server
 ```
 
-Claude Code:
+### Claude Code
 
 ```sh
 claude mcp add alphageometry -- uv --directory "$PWD" run --extra mcp python -m LM.mcp_server
 ```
 
-Copilot:
+### Copilot
 
 ```sh
 copilot mcp add alphageometry -- uv --directory "$PWD" run --extra mcp python -m LM.mcp_server
@@ -67,7 +67,7 @@ For hosts configured using JSON, the corresponding entry is:
 
 Example request:
 
-> Use the alphageometry MCP tools to load the built-in midpoint problem. Inspect
+> Use the alphageometry MCP tools to load the built-in ceva problem. Inspect
 > its known predicates and available constructions. Try auxiliary constructions
 > until DDAR proves the goal, then show me the proof. Keep the original diagram
 > available while exploring alternative branches.
@@ -99,7 +99,8 @@ States live in memory in one server process. Restarting the host/server loses
 its ids; load the problem again. Geometry diagnostics go to stderr, while
 stdout carries MCP messages only.
 
-Official host documentation: [Antigravity MCP](https://antigravity.google/docs/mcp/),
+Official host documentation:
+[Antigravity MCP](https://antigravity.google/docs/mcp/),
 [Codex MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli),
 [Claude Code MCP](https://code.claude.com/docs/en/mcp), and
 [Copilot CLI](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference).

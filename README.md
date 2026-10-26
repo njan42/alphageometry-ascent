@@ -4,6 +4,20 @@ This repository contains an implementation of Alpha Geometry, a system for devel
 
 This implementation uses [Ascent](https://github.com/s-arash/ascent/tree/master), a logic programming language (similar to Datalog) embedded in Rust, for the deductive database component.
 
+## Quick Links:
+
+- [Example Problem](#example-problem)
+- [Getting Started](#getting-started)
+- [Deductive Database](#deductive-database-(dd))
+    - [Basic Rule Example](#basic-rule-example)
+    - [Generating from Point Existence](#generating-from-point-existence)
+    - [Complex Rule Example](#complex-rule-example)
+    - [Double Points](#double-points)
+- [Algebraic Reasoning](#algebraic-reasoning-(ar))
+- [LLM Rabbit Generation](#llm-rabbit-generation)
+    - [Straight prompt](#straight-prompt)
+    - [As an MCP server](#as-an-mcp-server)
+
 ## Example Problem
 
 ```bash
@@ -45,59 +59,65 @@ Solved!
 
 ## Getting Started
 
-This repo uses [`uv`](https://docs.astral.sh/uv/) to manage the environment. After cloning the repo, run the following to get set up.
+This repo uses [`uv`](https://docs.astral.sh/uv/getting-started/installation/) to manage the environment. You'll also need a [Rust toolchain](https://rust-lang.org/tools/install/) to build the Ascent extension. After cloning the repo and installing `uv` and `rust`, run the following to get set up.
 
 ```bash
 uv sync
 source .venv/bin/activate
-maturin develop
+uv run --with maturin maturin develop
 ```
 
 You can then run `python solve.py problems/contri_sas` to solve the example problem above.
 
+To try all the problems that only require DDAR (no rabbits) run:
+
+```bash
+find problems -mindepth 1 -maxdepth 1 -type d ! -name 'rabbit*' | sort | xargs -n1 -I{} bash -c 'echo -e "\n\n==> {}" && uv run python solve.py "{}"'
+```
+
 To run all the problems in this repository run:
 
 ```bash
-find problems -mindepth 1 -maxdepth 1 -type d | sort | xargs -n1 -I{} bash -c 'echo -e "\n\n==> {}" && python solve.py "{}"'
+find problems -mindepth 1 -maxdepth 1 -type d | sort | xargs -n1 -I{} bash -c 'echo -e "\n\n==> {}" && uv run python solve.py --rabbit agent --agent-provider YOUR_AGENT_PROVIDER "{}"'
 ```
+> Note that this requires an LLM agent provider to be set up. See the [LLM Rabbit Generation](#llm-rabbit-generation) section for more details.
 
-## Deductive Database
+## Deductive Database (DD)
 
 Each geometric fact (`col`, `para`, etc.) is represented as a relation in Ascent, containing the fact and provenance lattice i.e. how it was derived. 
 
-The Provenance stores all derivations for a fact:
+The provenance uses Ascent's `Set<Derivation>` lattice to store all derivations for a fact:
 
 - `axiom()` → a starting fact
-- `from()` → a fact derived from other facts and a rule
+- `proof()` → a fact derived from other facts and a rule
 
 Lattices allow combining multiple derivations so that we can keep track of all the ways a fact was derived. We only search for the actual derivation used in the proof when we trace the proof in `problem.py`.
 
-### Basic Rule
+### Basic Rule Example
 
-Here's the symmetry rule for collinearity. `col(c, b, a)` is derived from `col(a, b, c)` using the symmetry property which is recorded in the provenance `Provenance::from("sym", vec![fact_id("col", [a, b, c])])`. We don't care how `col(a, b, c)` was derived, so we have the notation `?_prov` to ignore its provenance.
+Here's the symmetry rule for collinearity. `col(c, b, a)` is derived from `col(a, b, c)` using the symmetry property which is recorded in the provenance `proof("sym", vec![fact_id("col", [a, b, c])])`. We only need to keep track of 1 step at a time, so we don't care how `col(a, b, c)` was derived, so we have the notation `?_prov` to ignore its provenance.
 
 ```rust
-col(c, b, a, Provenance::from("sym", vec![fact_id("col", [a, b, c])]))
+col(c, b, a, proof("sym", vec![fact_id("col", [a, b, c])]))
     <-- col(a, b, c, ?_prov);
 ```
 
 ### Generating from Point Existence
 
-The reflexivity of congruence is derived trivially from point existence, so this fact has no provenance other than the rule name.
+Distinct points give a nonzero segment, so congruence with itself has no provenance other than the rule name.
 
 ```rust
-cong(a, b, a, b, Provenance::from("rfl", vec![])) <--
-    point(_, _, a), point(_, _, b),
-    if a != b;
+cong(a, b, a, b, proof("rfl", vec![])) <--
+    distinct(a, b);
 ```
 
-### Complex Rule
+### Complex Rule Example
 
-Here's the rule for ASA congruence. For triangles `ABC` and `DEF` to be congruent by ASA by `contri1`, we also need to check that the two triangles have the same orientation. This means that we need to check the diagram formed by points `ABC` and `DEF` to see if they are oriented the same way (both clockwise or both counterclockwise). We can access the coordinates of the points using the `point` relation and use a helper function `same_orientation` to check the orientation.
+Here's the rule for ASA congruence. `contri1` requires triangles `ABC` and `DEF` to have the same orientation (both clockwise or both counterclockwise). The `same_orientation!` macro checks this using the diagram's coordinates.
 
 ```rust
 // ASA Congruence
-contri1(a, b, c, d, e, f, Provenance::from("asa_cong", vec![
+contri1(a, b, c, d, e, f, proof("asa_cong", vec![
     fact_id("eqangle", [b, a, c, e, d, f]),
     fact_id("eqangle", [c, b, a, f, e, d]),
     fact_id("cong", [a, b, d, e])
@@ -105,15 +125,16 @@ contri1(a, b, c, d, e, f, Provenance::from("asa_cong", vec![
     eqangle(b, a, c, e, d, f, ?_prov1),
     eqangle(c, b, a, f, e, d, ?_prov2),
     cong(a, b, d, e, ?_prov3),
-    point(ax, ay, a), point(bx, by, b), point(cx, cy, c),
-    point(dx, dy, d), point(ex, ey, e), point(fx, fy, f),
-    if same_orientation(
-        vec![(*ax, *ay), (*bx, *by), (*cx, *cy)],
-        vec![(*dx, *dy), (*ex, *ey), (*fx, *fy)]
-    );
+    point(a), point(b), point(c),
+    point(d), point(e), point(f),
+    same_orientation!(a, b, c, d, e, f);
 ```
 
-## Algebraic Reasoning
+### Double Points
+
+Two names can refer to the same geometric point. DDAR can prove `eqpoint X Y` from intersection uniqueness or equal division ratios, then substitute either name into known facts. Equal coordinates alone don't prove equality i.e. we don't naively rely on the diagram. Run `uv run python solve.py problems/double_points` for an example.
+
+## Algebraic Reasoning (AR)
 
 The AR component uses Gaussian elimination to check whether angle or distance facts follow algebraically from known facts.
 
@@ -123,3 +144,50 @@ This implementation uses a mostly unchanged [elimination.py](https://github.com/
 See that file for the original copyright notice (Google LLC, Apache 2.0).
 
 The file `ar.py` in this repo bridges the predicate's algebraic representations to the `ElimAngle` and `ElimDistMul` in `elimination.py`. Note that the AR component using the elimination module can't give a complete proof trace.
+
+## LLM Rabbit Generation
+
+### Straight prompt
+
+Install and sign in to a CLI agent (`codex`, `claude`, `antigravity`, or `copilot`), then select it with `--agent-provider`. When DDAR stalls, the solver asks the agent for constructions and checks each suggestion with DDAR.
+
+Example: solve Ceva's theorem with [Antigravity](https://antigravity.google/download#antigravity-cli):
+
+```bash
+uv run python solve.py problems/rabbit_ceva --rabbit agent --agent-provider antigravity
+```
+
+To run all the `rabbit*` examples:
+
+```bash
+find problems -mindepth 1 -maxdepth 1 -type d -name 'rabbit*' | sort | xargs -n1 -I{} bash -c 'echo -e "\n\n==> {}" && uv run python solve.py --rabbit agent --agent-provider YOUR_AGENT_PROVIDER "{}"'
+```
+
+There are multiple parameters that you can use:
+
+- `--agent-model`: model name passed to the selected CLI
+- `--agent-timeout`: seconds per CLI call
+- `--agent-attempts`: total construction trials
+- `--agent-batch-size`: constructions requested per CLI call
+- `--agent-beam-width`: branches retained per search depth (default: 1).
+- `--agent-log`: JSONL event log path; defaults to a new file in `LM/logs`.
+
+In terms of the free tier agent providers (Copilot, Antigravity), Antigravity tended to have better results.
+
+### As an MCP server
+
+With MCP, the agent controls the search by calling tools to inspect facts, try constructions on separate branches, and retrieve proofs. For example, to register the server with Antigravity, run from the repository root:
+
+```bash
+uv sync --extra mcp
+agy mcp add alphageometry -- uv --directory "$PWD" run --extra mcp python -m LM.mcp_server
+```
+
+Start a new agent session and ask:
+
+> Use the alphageometry MCP tools to load the built-in ceva problem. Inspect
+> its known predicates and available constructions. Try auxiliary constructions
+> until DDAR proves the goal, then show me the proof. Keep the original diagram
+> available while exploring alternative branches.
+
+See [LM/MCP.md](LM/MCP.md) for more details

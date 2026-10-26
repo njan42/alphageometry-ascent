@@ -67,7 +67,7 @@ def construct_problem(
 def prove(
     problem: Problem, rabbit_mode: str = "none", *,
     agent_provider=None, agent_model=None, agent_timeout=120,
-    agent_attempts=10, agent_batch_size=3, agent_beam_width=1, agent_log=None
+    agent_attempts=12, agent_batch_size=3, agent_beam_width=1, agent_log=None
 ):
     if rabbit_mode not in {"none", "random", "agent"}:
         raise ValueError(f"Unknown rabbit mode: {rabbit_mode}")
@@ -154,7 +154,7 @@ def main():
     parser.add_argument("--agent-provider", choices=("codex", "antigravity", "claude", "copilot"))
     parser.add_argument("--agent-model", help="model name passed to the selected CLI")
     parser.add_argument("--agent-timeout", type=float, default=120, help="seconds per CLI call")
-    parser.add_argument("--agent-attempts", type=int, default=10, help="total construction trials")
+    parser.add_argument("--agent-attempts", type=int, default=12, help="total construction trials")
     parser.add_argument("--agent-batch-size", type=int, default=3)
     parser.add_argument("--agent-beam-width", type=int, default=1, help="branches retained per search depth")
     parser.add_argument("--agent-log", help="JSONL event log path (default: a new file in LM/logs)")
