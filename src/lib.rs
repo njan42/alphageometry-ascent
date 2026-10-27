@@ -320,6 +320,22 @@ mod rules {
         eqangle(a, b, c, a, b, c, proof("rfl", vec![])) <--
             distinct(a, b), distinct(a, c), distinct(b, c);
 
+        // Parallel lines sharing a vertex are the same line.
+        col(a, b, c, proof("col_from_parallel", vec![
+            fact_id("para", [a, b, a_prime, c])
+        ])) <--
+            para(a, b, a_prime, c, ?_prov), if a == a_prime,
+            distinct(a, b), distinct(a, c), distinct(b, c);
+
+        // Equal inscribed angles subtend the same chord.
+        cyclic(a, b, c, d, proof("cyclic_from_angle", vec![
+            fact_id("eqangle", [b, a, c, b_prime, d, c_prime])
+        ])) <--
+            eqangle(b, a, c, b_prime, d, c_prime, ?_prov),
+            if b == b_prime && c == c_prime,
+            noncollinear(a, b, c), noncollinear(b, d, c),
+            distinct(a, d), distinct(b, d), distinct(c, d);
+
         // ----------------------------------------------------------------
         // Deductive Rules
         // ----------------------------------------------------------------
