@@ -136,6 +136,9 @@ def prove(
 
     print(problem)
     if problem.is_solved():
+        for goal in problem.goals:
+            if hasattr(goal, "computed_degrees"):
+                print(f"{goal} = {goal.computed_degrees} degrees (mod 180)")
         print("\x1b[32mSolved!\x1b[0m")
     else:
         print("\x1b[31mCould not solve the problem.\x1b[0m")

@@ -884,6 +884,18 @@ class Inter(Predicate):
                 and all(fact.is_valid() for fact in self.data))
 
 
+class Acompute(Predicate):
+    """Request a symbolically determined angle between two lines (mod π)."""
+    ar_only = True
+
+    @str_init_args
+    def __init__(self, a: Point, b: Point, c: Point, d: Point):
+        self.data = (frozenset({a, b}), frozenset({c, d}))
+
+    def is_valid(self):
+        return all(len(pair) == 2 and distance(*pair) > 1e-10 for pair in self.data)
+
+
 class Distseq(_WeightedEquation, Predicate):
     """Σ t_i |A_i B_i| = 0 (AG2 additive, not logarithmic, lengths)."""
 

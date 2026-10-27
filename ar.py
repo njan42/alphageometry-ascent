@@ -303,6 +303,19 @@ class AR:
     def try_deduce(self, predicate: Predicate) -> set[Deduction]:
         if getattr(predicate, "ar_only", False) and not predicate.is_valid():
             return set()
+        from relations import Acompute
+        if isinstance(predicate, Acompute):
+            first, second = predicate.data
+            terms = {}
+            for pair, coefficient in ((first, 1), (second, -1)):
+                terms[pair] = terms.get(pair, 0) + coefficient
+            angle = _angle_row_to_formal(AngleRow(predicate, data=terms))
+            reduced, sources = self.angle_elim.elim.simplify(angle)
+            if all(var is angle_unit for var in reduced.comb.d):
+                from fractions import Fraction
+                predicate.computed_degrees = (reduced.comb.d.get(angle_unit, Fraction(0)) % 1) * 180
+                return {Deduction(predicate, sources, "AR_compute")}
+            return set()
         deductions = (self.angle_elim.try_deduce(predicate)
                       | self.ratio_elim.try_deduce(predicate))
         return deductions or self.additive_elim.try_deduce(predicate)
