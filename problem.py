@@ -44,6 +44,8 @@ class Problem:
         self.deductions_buffer = []
         self.possible_relations = set()
         self.impossible_relations = set()
+        self._ar_candidates = {}
+        self._ar_points = None
 
         for predicate in predicates:
             if self.is_valid(predicate):
@@ -193,8 +195,16 @@ class Problem:
         for goal in self.goals - self.predicates.keys():
             self.can_deduce(goal)
 
+        points_key = frozenset(self.points)
+        if points_key != self._ar_points:
+            self._ar_candidates.clear()
+            self._ar_points = points_key
         for pred_class in predicate_classes:
-            for predicate in pred_class.generate(self.points):
+            if pred_class not in self._ar_candidates:
+                self._ar_candidates[pred_class] = tuple({
+                    p for p in pred_class.generate(self.points) if self.is_valid(p)
+                })
+            for predicate in self._ar_candidates[pred_class]:
                 if predicate not in self.predicates:
                     self.can_deduce(predicate)
 

@@ -4,8 +4,11 @@ from typing import Generic, Optional, TypeVar, Callable, Iterator
 import functools
 import itertools
 import inspect
-from math import atan2, pi, isclose, remainder, log, fsum, isfinite
+from math import atan2, pi, isclose, remainder, log, fsum, isfinite, nextafter, inf
 from fractions import Fraction
+
+# Absolute tolerance in radians for angle predicates.
+ANGLE_ATOM = 1e-2
 
 def str_init_args(init):
     """
@@ -294,10 +297,11 @@ class Col(Predicate):
         return collect_rows(self.data, Para, lambda p: p.to_angle_rows())
 
     def is_valid(self):
-        a, b, c = self._init_args
+        a, b, c = sorted(self._init_args, key=lambda p: (p.x, p.y))
+        b, c = c, b
         ux, uy, vx, vy = b.x - a.x, b.y - a.y, c.x - a.x, c.y - a.y
         scale = (ux * ux + uy * uy) ** 0.5 * (vx * vx + vy * vy) ** 0.5
-        return isfinite(scale) and abs(ux * vy - uy * vx) <= 1e-7 * scale
+        return isfinite(scale) and abs(ux * vy - uy * vx) <= 1e-7 * max(scale, ux * ux + uy * uy)
 
     @classmethod
     def generate(cls, points: set[Point]) -> Iterator[Col]:
@@ -337,7 +341,8 @@ class Perp(Predicate):
         if not isclose(
             abs(angle_of_line(*line1) - angle_of_line(*line2)) % pi,
             pi / 2,
-            abs_tol=1e-2,
+            abs_tol=ANGLE_ATOM,
+            rel_tol=0,
         ):
             return False
         return True
@@ -345,7 +350,9 @@ class Perp(Predicate):
     @classmethod
     def generate(cls, points: set[Point]) -> Iterator[Perp]:
         for p1, p2 in itertools.combinations(itertools.combinations(points, 2), 2):
-            yield cls(*p1, *p2)
+            predicate = cls(*p1, *p2)
+            if predicate.is_valid():
+                yield predicate
 
 
 class Cong(Predicate):
@@ -380,7 +387,9 @@ class Cong(Predicate):
     @classmethod
     def generate(cls, points: set[Point]) -> Iterator[Cong]:
         for p1, p2 in itertools.combinations(itertools.combinations(points, 2), 2):
-            yield cls(*p1, *p2)
+            predicate = cls(*p1, *p2)
+            if predicate.is_valid():
+                yield predicate
 
 
 class Simtri1(Predicate):
@@ -488,27 +497,31 @@ class Eqangle(Predicate):
             return False
         if len({a2, b2, c2}) != 3:
             return False
-        if not (
-            isclose(
-                ((angle_between(a1, b1, c1) % pi) - (angle_between(a2, b2, c2) % pi))
-                % pi,
-                0,
-                abs_tol=1e-2,
-            )
-            or isclose(
-                ((angle_between(a1, b1, c1) % pi) - (angle_between(a2, b2, c2) % pi))
-                % pi,
-                pi,
-                abs_tol=1e-2,
-            )
-        ):
+        difference = remainder(angle_between(a1, b1, c1) - angle_between(a2, b2, c2), pi)
+        if not isclose(difference, 0, rel_tol=0, abs_tol=ANGLE_ATOM):
             return False
         return True
 
     @classmethod
     def generate(cls, points: set[Point]) -> Iterator[Eqangle]:
-        for a1, a2 in itertools.combinations(itertools.permutations(points, 3), 2):
-            yield cls(*a1, *a2)
+        # Sort angles before pairing them.
+        from bisect import bisect_left, bisect_right
+        angles = sorted(
+            ((angle_between(*triple) % pi, tuple(p.name for p in triple), triple)
+             for triple in itertools.permutations(points, 3)
+             if distance(triple[0], triple[1]) > 1e-10
+             and distance(triple[1], triple[2]) > 1e-10),
+            key=lambda item: (item[0], item[1]),
+        )
+        values = [item[0] for item in angles]
+        for i, (value, _, first) in enumerate(angles):
+            nearby_end = bisect_right(values, nextafter(value + ANGLE_ATOM, inf), i + 1)
+            wrap_start = max(nearby_end, bisect_left(
+                values, nextafter(value + pi - ANGLE_ATOM, -inf), i + 1))
+            for j in itertools.chain(range(i + 1, nearby_end), range(wrap_start, len(angles))):
+                predicate = cls(*first, *angles[j][2])
+                if predicate.is_valid():
+                    yield predicate
 
 
 class Para(Predicate):
@@ -547,7 +560,9 @@ class Para(Predicate):
     @classmethod
     def generate(cls, points: set[Point]) -> Iterator[Para]:
         for p1, p2 in itertools.combinations(itertools.combinations(points, 2), 2):
-            yield cls(*p1, *p2)
+            predicate = cls(*p1, *p2)
+            if predicate.is_valid():
+                yield predicate
 
 
 class Contri1(Predicate):
