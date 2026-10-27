@@ -79,12 +79,14 @@ class Problem:
 
     def ddar_step(self, *, stop_when_solved: bool = True) -> bool:
         previous_count = len(self.predicates)
+        previous_revision = self.ar.revision
         for deduction_fn in dd.functions:
             deduction_fn(self)
+        self.ar.transfer_lengths(self.points)
         if not stop_when_solved or not self.is_solved():
             self.search_ar()
         self.flush_deductions()
-        return len(self.predicates) > previous_count
+        return len(self.predicates) > previous_count or self.ar.revision != previous_revision
 
     def run_ddar(self, *, stop_when_solved: bool = True, max_iterations: int = 50):
         for _ in range(max_iterations):

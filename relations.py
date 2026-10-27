@@ -882,3 +882,28 @@ class Inter(Predicate):
         return (isfinite(scale) and distance(a, b) > 1e-10 and distance(c, d) > 1e-10
                 and abs(ux * vy - uy * vx) > 1e-10 * scale
                 and all(fact.is_valid() for fact in self.data))
+
+
+class Distseq(_WeightedEquation, Predicate):
+    """Σ t_i |A_i B_i| = 0 (AG2 additive, not logarithmic, lengths)."""
+
+    @classmethod
+    def point_arg_count(cls, count):
+        n, remainder = divmod(count, 3)
+        if n < 1 or remainder:
+            raise ValueError("Distseq expects 2n points and n coefficients")
+        return 2 * n
+
+    def __init__(self, *args):
+        count = self.point_arg_count(len(args))
+        self._init_args = (*args[:count], *(Fraction(str(c)) for c in args[count:]))
+        self.terms = {}
+        for a, b, c in zip(args[:count:2], args[1:count:2], self._init_args[count:]):
+            pair = frozenset({a, b})
+            self.terms[pair] = self.terms.get(pair, Fraction(0)) + c
+        self.terms = {pair: c for pair, c in self.terms.items() if c}
+        self.constant = Fraction(0)
+        self.data = frozenset(self.terms.items())
+
+    def is_valid(self):
+        return self._valid_equation(distance)

@@ -14,6 +14,8 @@ from elimination import (
     LinComb,
     ElimAngle,
     ElimDistMul,
+    ElimDistAdd,
+    DistAdd,
     FormalAngle,
     DistMul,
     angle_unit,
@@ -30,7 +32,7 @@ class LineVar:
     @classmethod
     def get(cls, line: frozenset[Point], numeric_direction: float) -> ElimLHS:
         if line not in cls._registry:
-            name = "".join(sorted(p.name for p in line))
+            name = ",".join(sorted(p.name for p in line))
             cls._registry[line] = ElimLHS(numeric_direction, f"σ({name})")
         return cls._registry[line]
 
@@ -48,7 +50,7 @@ class SegVar:
     @classmethod
     def get(cls, seg: frozenset[Point], numeric_length: float) -> ElimLHS:
         if seg not in cls._registry:
-            name = "".join(sorted(p.name for p in seg))
+            name = ",".join(sorted(p.name for p in seg))
             cls._registry[seg] = ElimLHS(numeric_length, f"|{name}|")
         return cls._registry[seg]
 
@@ -123,20 +125,10 @@ class ElimAngleAR:
         if not rows or any(_numeric_length(pair) <= 1e-10 for row in rows for pair in row.data):
             return set()
 
-        # implicit: row has no data (always zero) → trivially true
-        implicit = set()
-        for row in rows:
-            if not row.data:
-                implicit.add(Deduction(row.predicate, set(), "AR_implicit"))
-        if implicit:
-            return implicit
-
         deductions = set()
         all_sources: set[Predicate] = set()
         is_deduced = True
         for row in rows:
-            if not row.data or any(_numeric_length(pair) <= 1e-10 for pair in row.data):
-                continue
             angle = _angle_row_to_formal(row)
             simplified, sources = self.elim.simplify(angle)
             is_deduced &= simplified.is_zero()
@@ -186,19 +178,10 @@ class ElimRatioAR:
         if not rows or any(_numeric_length(pair) <= 1e-10 for row in rows for pair in row.data):
             return set()
 
-        implicit = set()
-        for row in rows:
-            if not row.data:
-                implicit.add(Deduction(row.predicate, set(), "AR_implicit"))
-        if implicit:
-            return implicit
-
         deductions = set()
         all_sources: set[Predicate] = set()
         is_deduced = True
         for row in rows:
-            if not row.data or any(_numeric_length(pair) <= 1e-10 for pair in row.data):
-                continue
             dist = _ratio_row_to_formal(row)
             simplified, sources = self.elim.simplify(dist)
             is_deduced &= simplified.is_one()
@@ -226,22 +209,103 @@ class ElimRatioAR:
         return "\n".join(lines)
 
 
+class ElimAdditiveAR:
+    """Linear lengths, kept separate from logarithmic segment variables."""
+    def __init__(self):
+        self.elim = ElimDistAdd()
+        self.variables = {}
+
+    def formal(self, terms):
+        comb = LinComb.zero()
+        for pair, coefficient in terms.items():
+            if pair not in self.variables:
+                self.variables[pair] = ElimLHS(_numeric_length(pair), "L(" + ",".join(sorted(p.name for p in pair)) + ")")
+            comb.iadd_mul(LinComb.singleton(self.variables[pair]), coefficient)
+        return DistAdd(comb)
+
+    def terms(self, predicate):
+        from relations import Distseq, Cong, Col, distance
+        if isinstance(predicate, Distseq):
+            return predicate.terms
+        if isinstance(predicate, Cong):
+            return predicate.to_ratio_rows()[0].data if predicate.to_ratio_rows() else {}
+        if isinstance(predicate, Col):
+            a, b, c = sorted(predicate._init_args, key=lambda p: (p.x, p.y))
+            if min(distance(a,b), distance(b,c)) <= 1e-10:
+                return {}
+            return {frozenset({a,b}): 1, frozenset({b,c}): 1, frozenset({a,c}): -1}
+        return {}
+
+    def add_predicate(self, predicate):
+        terms = self.terms(predicate)
+        if terms and all(_numeric_length(pair) > 1e-10 for pair in terms):
+            formal = self.formal(terms)
+            if abs(formal.value) ** 2 < ATOM:
+                self.elim.force_zero(formal, sources={predicate})
+
+    def try_deduce(self, predicate):
+        from relations import Distseq, Cong
+        if not isinstance(predicate, (Distseq, Cong)):
+            return set()
+        terms = self.terms(predicate)
+        if not terms or any(_numeric_length(pair) <= 1e-10 for pair in terms):
+            return set()
+        reduced, sources = self.elim.simplify(self.formal(terms))
+        return {Deduction(predicate, sources, "AR_length")} if reduced.is_zero() else set()
+
+
 class AR:
     def __init__(self):
         self.angle_elim = ElimAngleAR()
         self.ratio_elim = ElimRatioAR()
+        self.additive_elim = ElimAdditiveAR()
+
+    @property
+    def revision(self):
+        return (len(self.angle_elim.elim.core.instantiated),
+                len(self.ratio_elim.elim.core.instantiated),
+                len(self.additive_elim.elim.core.instantiated))
 
     def add_predicate(self, predicate: Predicate) -> None:
         self.angle_elim.add_predicate(predicate)
         self.ratio_elim.add_predicate(predicate)
+        self.additive_elim.add_predicate(predicate)
+
+    def transfer_lengths(self, points):
+        import itertools
+        additive, multiplicative = {}, {}
+        for a, b in itertools.combinations(points, 2):
+            pair = frozenset({a, b})
+            if _numeric_length(pair) <= 1e-10:
+                continue
+            add, add_sources = self.additive_elim.elim.simplify(self.additive_elim.formal({pair: 1}))
+            mul, mul_sources = self.ratio_elim.elim.simplify(
+                _ratio_row_to_formal(RatioRow(None, data={pair: 1})))
+            if add.is_zero():
+                continue
+            add_normal, add_coefficient = add.normalize()
+            mul_normal, mul_coefficient = mul.normalize()
+            # Matching reduced forms are symbolic equalities. Coordinates
+            # played no part in choosing which forms match.
+            if add_normal in additive:
+                other_mul, sources = additive[add_normal]
+                self.ratio_elim.elim.force_one(other_mul / (mul / add_coefficient),
+                                               sources=sources | add_sources | mul_sources)
+            else:
+                additive[add_normal] = (mul / add_coefficient, add_sources | mul_sources)
+            if mul_normal in multiplicative:
+                other_add, sources = multiplicative[mul_normal]
+                self.additive_elim.elim.force_zero(other_add - add / mul_coefficient,
+                                                  sources=sources | add_sources | mul_sources)
+            else:
+                multiplicative[mul_normal] = (add / mul_coefficient, add_sources | mul_sources)
 
     def try_deduce(self, predicate: Predicate) -> set[Deduction]:
         if getattr(predicate, "ar_only", False) and not predicate.is_valid():
             return set()
-        return (
-            self.angle_elim.try_deduce(predicate)
-            | self.ratio_elim.try_deduce(predicate)
-        )
+        deductions = (self.angle_elim.try_deduce(predicate)
+                      | self.ratio_elim.try_deduce(predicate))
+        return deductions or self.additive_elim.try_deduce(predicate)
 
     def __str__(self) -> str:
         return str(self.angle_elim) + "\n" + str(self.ratio_elim)
