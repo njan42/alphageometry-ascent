@@ -1,6 +1,7 @@
 from typing import List, Tuple, Dict, Optional
 import re
 import inspect
+from fractions import Fraction
 import relations
 from relations import Predicate, Point
 
@@ -40,6 +41,26 @@ def _instantiate_predicate(
     name: str, args, points: dict, allow_dummy_points: bool
 ) -> Predicate:
     key = _normalize_predicate_name(name)
+    args = [a for a in args if a != ""]
+    # AG2 uses four directed lines, whereas our native Eqangle uses
+    # two vertex triples. Preserve arbitrary lines as an angle equation.
+    if key == "eqangle" and len(args) == 8:
+        triples = []
+        for offset in (0, 4):
+            a, b, c, d = args[offset:offset + 4]
+            common = set((a, b)) & set((c, d))
+            if len(common) != 1:
+                break
+            vertex, = common
+            triples.extend([b if a == vertex else a, vertex, d if c == vertex else c])
+        if len(triples) == 6:
+            return _instantiate_predicate("eqangle", triples, points, allow_dummy_points)
+        return _instantiate_predicate("angeq", [*args, 1, -1, -1, 1, 0], points, allow_dummy_points)
+    if (key in {"aconst", "s_angle"} and len(args) == 5
+            and not re.fullmatch(r"[-+]?\d+", str(args[3]))):
+        return _instantiate_predicate("angeq", [*args[:4], 1, -1, -Fraction(args[4]) / 180], points, allow_dummy_points)
+    if key == "coll":
+        key = "col"
     if key not in _PREDICATE_REGISTRY:
         raise ValueError(
             f"Unknown predicate '{name}'. Supported: {sorted(_PREDICATE_REGISTRY.keys())}"
@@ -50,6 +71,9 @@ def _instantiate_predicate(
 
     variable = getattr(cls, "variable_arity", False)
     point_count = cls.point_arg_count(len(arg_list)) if variable else arity
+    if key == "aconst":
+        point_count = 3
+        arg_list[3:] = [int(value) for value in arg_list[3:]]
     if not variable and len(arg_list) != arity:
         raise ValueError(
             f"Predicate '{name}' expects {arity} arguments, got {len(arg_list)}: {arg_list}"
@@ -74,7 +98,7 @@ def _instantiate_predicate(
 _POINT_SEGMENT_RE = re.compile(
     r"""
     ^\s*
-    (?P<name>[A-Za-z][A-Za-z0-9]*)      # point name
+    (?P<name>[A-Za-z][A-Za-z0-9']*)      # point name
     @
     (?P<x>[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?) # x coordinate
     _
@@ -150,11 +174,11 @@ def parse_string(
     If allow_dummy_points is True, any point referenced by a predicate but
     not found in points will be created with coordinates (0.0, 0.0).
     """
-    if points:
-        local_points = dict(points)
-        text = problem
-    else:
-        local_points, text = parse_points_and_predicates(problem)
+    embedded_points, text = parse_points_and_predicates(problem)
+    local_points = embedded_points if points is None else dict(points)
+    # AG2 puts '?' directly after the last premise; native inputs may
+    # use a semicolon first. Both forms have the same meaning.
+    text = text.replace("?", "; ?")
 
     # Now split the predicates/goals text into clauses by ';'
     segments = [seg.strip() for seg in text.split(";") if seg.strip()]

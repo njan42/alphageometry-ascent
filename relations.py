@@ -318,7 +318,7 @@ class Perp(Predicate):
         return [
             AngleRow(
                 predicate=self,
-                data={list(self.data)[0]: Fraction(1), list(self.data)[1]: Fraction(1)},
+                data={list(self.data)[0]: Fraction(1), list(self.data)[1]: Fraction(-1)},
                 constant=Fraction(1, 2),
             )
         ]
