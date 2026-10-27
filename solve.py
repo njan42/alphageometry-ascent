@@ -77,7 +77,7 @@ def prove(
 
     changed = True
     iteration = 0
-    max_iterations = 10
+    max_iterations = 25
 
     print("Initial Predicates:")
     for pred in problem.predicates:

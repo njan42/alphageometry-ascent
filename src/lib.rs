@@ -17,6 +17,20 @@ fn same_orientation(coords: &Coordinates, left: &[&str; 3], right: &[&str; 3]) -
     }
 }
 
+fn longer_segment(coords: &Coordinates, a: &str, b: &str, c: &str, d: &str) -> bool {
+    let length = |a: &str, b: &str| -> Option<f64> {
+        let &(ax, ay) = coords.get(a)?;
+        let &(bx, by) = coords.get(b)?;
+        Some((ax - bx).hypot(ay - by))
+    };
+    match (length(a, b), length(c, d)) {
+        (Some(first), Some(second)) => {
+            first.is_finite() && second.is_finite() && second > 1e-10 && first > second + 1e-10
+        }
+        _ => false,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct Derivation {
     rule: String,
@@ -350,6 +364,17 @@ mod rules {
             distinct(a, d), distinct(b, c),
             distinct(b, d), distinct(c, d);
 
+        // Three noncollinear points determine a circle and its center.
+        cong(o, d, o, a, proof("circle_radius", vec![
+            fact_id("cyclic", [a, b, c, d]),
+            fact_id("cong", [o, a, o_prime, b]),
+            fact_id("cong", [o, b, o_second, c])
+        ])) <--
+            cyclic(a, b, c, d, ?_circle),
+            cong(o, a, o_prime, b, ?_radius1), if o == o_prime,
+            cong(o, b, o_second, c, ?_radius2), if o == o_second,
+            noncollinear(a, b, c);
+
         // Right Angle Equal
         eqangle(c, b, a, b, e, a, proof("right_angle_eq", vec![
             fact_id("perp", [a, b, b_prime, c]),
@@ -361,6 +386,85 @@ mod rules {
             distinct(a, e), distinct(b, c),
             distinct(b, e), distinct(c, e),
             if b == b_prime && e == e_prime;
+
+        // Isosceles triangles
+        eqangle(o, a, b, a, b, o, proof("isosceles", vec![
+            fact_id("cong", [o, a, o_prime, b])
+        ])) <--
+            cong(o, a, o_prime, b, ?_prov), if o == o_prime,
+            noncollinear(o, a, b);
+
+        cong(a, b, a, c, proof("isosceles_converse", vec![
+            fact_id("eqangle", [a, b, c, b_prime, c_prime, a_prime])
+        ])) <--
+            eqangle(a, b, c, b_prime, c_prime, a_prime, ?_prov),
+            if a == a_prime && b == b_prime && c == c_prime,
+            noncollinear(a, b, c);
+
+        // SSS similarity
+        simtri1(a, b, c, d, e, f, proof("sss_sim", vec![
+            fact_id("eqratio", [a, b, a_prime, c, d, e, d_prime, f]),
+            fact_id("eqratio", [b, c, a, c_prime, e, f, d, f_prime])
+        ])) <--
+            eqratio(a, b, a_prime, c, d, e, d_prime, f, ?_prov0),
+            eqratio(b, c, a, c_prime, e, f, d, f_prime, ?_prov1),
+            if a == a_prime && c == c_prime && d == d_prime && f == f_prime,
+            noncollinear(a, b, c), noncollinear(d, e, f),
+            same_orientation!(a, b, c, d, e, f);
+
+        simtri2(a, b, c, d, e, f, proof("sss_sim", vec![
+            fact_id("eqratio", [a, b, a_prime, c, d, e, d_prime, f]),
+            fact_id("eqratio", [b, c, a, c_prime, e, f, d, f_prime])
+        ])) <--
+            eqratio(a, b, a_prime, c, d, e, d_prime, f, ?_prov0),
+            eqratio(b, c, a, c_prime, e, f, d, f_prime, ?_prov1),
+            if a == a_prime && c == c_prime && d == d_prime && f == f_prime,
+            noncollinear(a, b, c), noncollinear(d, e, f),
+            same_orientation!(a, b, c, f, e, d);
+
+        // SAS similarity
+        simtri1(a, b, c, d, e, f, proof("sas_sim", vec![
+            fact_id("eqangle", [b, a, c, e, d, f]),
+            fact_id("eqratio", [a, b, a_prime, c, d, e, d_prime, f])
+        ])) <--
+            eqangle(b, a, c, e, d, f, ?_prov0),
+            eqratio(a, b, a_prime, c, d, e, d_prime, f, ?_prov1),
+            if a == a_prime && d == d_prime,
+            noncollinear(a, b, c), noncollinear(d, e, f),
+            same_orientation!(a, b, c, d, e, f);
+
+        simtri2(a, b, c, d, e, f, proof("sas_sim", vec![
+            fact_id("eqangle", [b, a, c, f, d, e]),
+            fact_id("eqratio", [a, b, a_prime, c, d, e, d_prime, f])
+        ])) <--
+            eqangle(b, a, c, f, d, e, ?_prov0),
+            eqratio(a, b, a_prime, c, d, e, d_prime, f, ?_prov1),
+            if a == a_prime && d == d_prime,
+            noncollinear(a, b, c), noncollinear(d, e, f),
+            same_orientation!(a, b, c, f, e, d);
+
+        // SSA similarity
+        simtri1(a, b, c, d, e, f, proof("ssa_sim", vec![
+            fact_id("eqangle", [b, a, c, e, d, f]),
+            fact_id("eqratio", [b, c, a, c_prime, e, f, d, f_prime])
+        ])) <--
+            eqangle(b, a, c, e, d, f, ?_prov0),
+            eqratio(b, c, a, c_prime, e, f, d, f_prime, ?_prov1),
+            if c == c_prime && f == f_prime,
+            noncollinear(a, b, c), noncollinear(d, e, f),
+            longer_segment!(b, c, a, c), longer_segment!(e, f, d, f),
+            same_orientation!(a, b, c, d, e, f);
+
+        simtri2(a, b, c, d, e, f, proof("ssa_sim", vec![
+            fact_id("eqangle", [b, a, c, f, d, e]),
+            fact_id("eqratio", [b, c, a, c_prime, e, f, d, f_prime])
+        ])) <--
+            eqangle(b, a, c, f, d, e, ?_prov0),
+            eqratio(b, c, a, c_prime, e, f, d, f_prime, ?_prov1),
+            if c == c_prime && f == f_prime,
+            noncollinear(a, b, c), noncollinear(d, e, f),
+            longer_segment!(b, c, a, c), longer_segment!(e, f, d, f),
+            same_orientation!(a, b, c, f, e, d);
 
         // AA Similarity
         simtri1(a, b, c, d, e, f, proof("aa_sim", vec![
@@ -873,6 +977,9 @@ impl DeductiveDatabase {
             }
             macro numerically_nonparallel($a: expr, $b: expr, $c: expr, $d: expr) {
                 if numerically_nonparallel(&coordinates, $a, $b, $c, $d)
+            }
+            macro longer_segment($a: expr, $b: expr, $c: expr, $d: expr) {
+                if longer_segment(&coordinates, $a, $b, $c, $d)
             }
             macro same_orientation($a: expr, $b: expr, $c: expr, $d: expr, $e: expr, $f: expr) {
                 if same_orientation(&coordinates, &[$a, $b, $c], &[$d, $e, $f])
