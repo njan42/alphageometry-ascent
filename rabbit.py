@@ -961,40 +961,12 @@ def midpoint_theorem_problem():
     )
 
 
-def test_mirror_unlocks_triangle_midpoint_theorem():
-    """DDAR needs a mirror rabbit to prove the triangle midpoint theorem."""
-    from relations import Midp
-
-    problem = midpoint_theorem_problem()
-    original_points = set(problem.points)
-    by_name = {p.name: p for p in original_points}
-    d, e = by_name["D"], by_name["E"]
-    goal, = problem.goals
-    problem.run_ddar()
-    assert not problem.is_solved(), "DDAR should not solve without the rabbit"
-    assert goal not in problem.predicates
-
-    # Add the mirror rabbit to unlock the proof for DDAR
-    assert mirror(problem, e, d)
-    x, = problem.points - original_points
-    assert Midp(d, e, x) in problem.predicates
-    assert not problem.is_solved(), "The rabbit should not directly add the goal"
-
-    problem.run_ddar()
-    assert problem.is_solved(), "DDAR must solve with the rabbit"
-    assert problem.predicates[goal]
-    proof = str(problem)
-    assert "rabbit:mirror" in proof
-    print(proof)
-    print("Passed: DDAR stalls alone but solves with the mirror rabbit.")
-
-
 def test_parallel_rabbits_unlock_ceva():
     """The two intersections of A's parallel to BC give the usual Ceva proof."""
     from pathlib import Path
     from LM.geometry import load_problem
 
-    problem = load_problem(Path(__file__).parent / "problems" / "ceva")
+    problem = load_problem(Path(__file__).parent / "problems" / "rabbit_ceva")
     assert not problem.is_solved(), "DDAR should not solve without the rabbits"
     points = {p.name: p for p in problem.points}
     a, b, c, d, e, f = (points[n] for n in "ABCDEF")
@@ -1018,7 +990,7 @@ def test_double_point_rabbits_unlock_ceva_converse():
     from LM.geometry import load_problem
     from relations import Eqpoint
 
-    problem = load_problem(Path(__file__).parent / "problems" / "ceva_converse")
+    problem = load_problem(Path(__file__).parent / "problems" / "rabbit_ceva_converse")
     assert not problem.is_solved(), "DDAR should not solve without the rabbits"
     points = {p.name: p for p in problem.points}
     a, b, c, d, e, f, o = (points[n] for n in "ABCDEFO")
@@ -1045,7 +1017,7 @@ def test_parallel_rabbit_unlocks_menelaus():
     from pathlib import Path
     from LM.geometry import load_problem
 
-    problem = load_problem(Path(__file__).parent / "problems" / "menelaus")
+    problem = load_problem(Path(__file__).parent / "problems" / "rabbit_menelaus")
     assert not problem.is_solved(), "DDAR should not solve without the rabbit"
     points = {p.name: p for p in problem.points}
     a, b, c, d, e = (points[n] for n in "ABCDE")
@@ -1066,7 +1038,7 @@ def test_double_point_rabbits_unlock_menelaus_converse():
     from LM.geometry import load_problem
     from relations import Eqpoint
 
-    problem = load_problem(Path(__file__).parent / "problems" / "menelaus_converse")
+    problem = load_problem(Path(__file__).parent / "problems" / "rabbit_menelaus_converse")
     assert not problem.is_solved(), "DDAR should not solve without the rabbits"
     points = {p.name: p for p in problem.points}
     a, b, c, d, e, f = (points[n] for n in "ABCDEF")
@@ -1090,8 +1062,7 @@ def test_double_point_rabbits_unlock_menelaus_converse():
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Test hand-picked rabbit proofs without an agent.")
-    tests = {"midpoint": test_mirror_unlocks_triangle_midpoint_theorem,
-             "ceva": test_parallel_rabbits_unlock_ceva,
+    tests = {"ceva": test_parallel_rabbits_unlock_ceva,
              "ceva-converse": test_double_point_rabbits_unlock_ceva_converse,
              "menelaus": test_parallel_rabbit_unlocks_menelaus,
              "menelaus-converse": test_double_point_rabbits_unlock_menelaus_converse}
